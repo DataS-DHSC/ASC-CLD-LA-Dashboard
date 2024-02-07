@@ -6,7 +6,7 @@
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-09-30';
+DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 
@@ -29,12 +29,21 @@ SELECT
   month(calendar_date) AS [Month_Num],
   year(calendar_date) AS [Year],
   eomonth(calendar_date) AS Last_Day_of_Month,
-  DATEADD(DAY, (7 - DATEPART(WEEKDAY, Calendar_Date)) +1, Calendar_Date)  AS Last_Day_of_Week,
+  CASE 
+    --If the first week isn't a full week then null
+    WHEN DATEPART(DAY, DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date)) BETWEEN 1 AND 6 AND MONTH(Calendar_Date) = MONTH(@ReportingPeriodStartDate) THEN NULL 
+    --If the last week isn't a full week then null
+    WHEN DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date) > @ReportingPeriodEndDate THEN NULL
+    --Else output the last day in the week for weekly reporting
+    ELSE DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date)
+    END
+  AS Last_Day_of_Week,  
   @ReportingPeriodStartDate AS Reporting_Period_Start_Date,
   @ReportingPeriodEndDate AS Reporting_Period_End_Date,
   CONCAT(FORMAT(@ReportingPeriodStartDate, 'MMM yy'), ' - ', FORMAT(@ReportingPeriodEndDate, 'MMM yy')) AS Current_Reporting_Period,
+  CONCAT(FORMAT(DATEADD(month, -2, @ReportingPeriodEndDate), 'MMM yy'), ' - ', FORMAT(@ReportingPeriodEndDate, 'MMM yy')) AS Costs_Reporting_period,
   GETDATE() AS Refresh_Date
-INTO ASC_Sandbox.LA_PBI_Calendar_dim
+INTO ASC_Sandbox.LA_PBI_Calendar_Dim
 FROM d
 ORDER BY Calendar_Date
 OPTION (MAXRECURSION 0);

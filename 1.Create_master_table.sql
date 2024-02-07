@@ -24,7 +24,7 @@
 -----------------------------------------------------
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01' 
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-09-30' 
+DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31' 
 DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
 
 -- Create a temporary table to store the list of relevant submissions
@@ -40,12 +40,6 @@ EXEC ASC_Sandbox.GetMandatorySubmissions
   @ReportingPeriodEndDate = @ReportingPeriodEndDate,
   @SubmissionsAsOfDate = @SubmissionsAsOfDate
 
-
---Manually add any LAs identified who did not follow expected submission practice
---i.e. Didn't submit a single file covering the whole of the mandatory reporting period
-INSERT INTO #Submissions
-SELECT Der_Load_Filename
-FROM ASC_Sandbox.LA_PBI_Additional_Submissions_Temp
 
 -- Filter the full dataset to the file list created above
 
@@ -118,13 +112,13 @@ FROM (
   ) b 
 --select requests, assessments, reviews which start before the end of the period and end withing the reporting period
 WHERE ((Event_Type not like '%service%' 
-  AND Der_Event_End_Date BETWEEN @ReportingPeriodStartDate AND @ReportingPeriodendDate 
+  AND Der_Event_End_Date BETWEEN @ReportingPeriodStartDate AND @ReportingPeriodEndDate 
   AND Event_Start_Date <= @ReportingPeriodEndDate ) --any events with null start dates are by default excluded
   OR
 
 -- selects services which start before the reporting period end and end must be after the start or null
   (Event_Type like '%service%' AND (Der_Event_End_Date >= @ReportingPeriodStartDate OR Der_Event_End_Date IS NULL)
-  AND Event_Start_Date <= @ReportingPeriodendDate) )
+  AND Event_Start_Date <= @ReportingPeriodEndDate) )
 
 -- select records where date of death is null or greater than the reporting period start and event start dates
   AND (Date_of_Death IS NULL
@@ -279,9 +273,46 @@ FROM #Temp2_IDs;
 
 -----------------------------------------------------
 -- TEMP TABLE 4--
--- Merges on the event outcome ranks from the hierarchy lookup table
+-- Merges on the event outcome ranks from a hierarchy lookup table
 -- This required in a later stage when determining unique events
 -----------------------------------------------------
+
+--Create event outcome hierarchy table
+DROP TABLE IF EXISTS ASC_Sandbox.Event_Outcome_Hierarchy;
+DROP TABLE IF EXISTS #EO_Hierarchy;
+
+CREATE TABLE 
+ #EO_Hierarchy (
+	Event_Outcome_Hierarchy INT,
+	Event_Outcome_Spec VARCHAR(100)
+	);
+
+INSERT INTO #EO_Hierarchy VALUES
+  ('1','Progress to Reablement/ST-Max'),
+  ('2','Progress to Assessment'),
+  ('3','Admitted to hospital'),
+  ('4','Progress to Re-assessment / Unplanned Review'),
+  ('5','Progress to End of Life Care'),
+  ('6','No change in package'),
+  ('7','Service ended as planned'),
+  ('8','Progress to financial assessment '),
+  ('9','Provision of service'),
+  ('10','NFA - Deceased'),
+  ('11','NFA - Moved to another LA'),
+  ('12','NFA - 100% NHS funded care'),
+  ('13','NFA - Information & Advice / Signposting only'),
+  ('14','NFA - Self-funded client (Inc. 12wk disregard)'),
+  ('15','NFA - Support declined'),
+  ('16','NFA - Support ended: Other reason'),
+  ('17','NFA - No services offered: Other reason'),
+  ('18','NFA- Other')
+;
+
+SELECT *,
+REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Event_Outcome_Spec, ' ', ''), '.', ''),'-', ''),'(', ''),')', ''),'_', ''),'%', ''), ',', ''), ';', ''),'/', ''),'\', ''),':', ''), '!', ''), '&', '') as Event_Outcome_Stripped
+INTO ASC_Sandbox.Event_Outcome_Hierarchy
+FROM #EO_Hierarchy;
+
 DROP TABLE IF EXISTS #Temp4_EO_Hierarchy;
 
 SELECT 
@@ -380,3 +411,4 @@ SELECT
   Der_Latest_Import_Flag
 INTO ASC_Sandbox.LA_PBI_Master_Table
 FROM #Temp4_EO_Hierarchy;
+

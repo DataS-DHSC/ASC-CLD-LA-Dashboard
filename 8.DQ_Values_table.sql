@@ -10,7 +10,7 @@
 --------------------------------------------------------------------------
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-09-30'
+DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31'
 DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
 
 --------------------------------------------------------------------------

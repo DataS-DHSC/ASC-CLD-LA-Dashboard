@@ -1,5 +1,6 @@
 ------  COSTS FACT TABLE ------
 --This code outputs the costs table from the previously created services fact table
+--It restricts records to only the latest quarter (as LAs provide the latest cost this should only be applied to the latest events)
 --It excludes any null costs and converts any negative costs or planned units to positive
 --It also excludes any rows without planned units and where the units cannot be deduced from the cost frequency
 --It derives new fields 'weeks_of_service', 'total_cost_period' and 'cost_per_week'
@@ -11,15 +12,20 @@
 -----------------------------------------------------
 ---- Set reporting period dates -----
 -----------------------------------------------------
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-09-30'
+DECLARE @ReportingPeriodStartDate AS DATE = '2023-10-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31'
 
 
 -----------------------------------------------------
--- Prep - convert planned units to numeric  ------------
+------ Filter to only the latest quarter  -----------
 -----------------------------------------------------
-ALTER TABLE ASC_Sandbox.LA_PBI_Services_Fact
-ALTER COLUMN Planned_Units_Per_Week NUMERIC(18, 2) NULL;
+DROP TABLE IF EXISTS #Costs_Latest_Quarter;
+
+SELECT *
+INTO #Costs_Latest_Quarter
+FROM ASC_Sandbox.LA_PBI_Services_Fact
+WHERE (Event_End_Date >= @ReportingPeriodStartDate OR Event_End_Date IS NULL)
+  AND Event_Start_Date <= @ReportingPeriodEndDate;
 
 
 -----------------------------------------------------
@@ -52,7 +58,7 @@ FROM (
       WHEN Cost_Frequency_Unit_Type LIKE 'annual%' THEN 1.0 /52.0
       ELSE ABS(Planned_Units_Per_Week)    --otherwise convert any negative planned units to positive
     END AS Planned_Units_Per_Week_Abs
-  FROM ASC_Sandbox.LA_PBI_Services_Fact
+  FROM #Costs_Latest_Quarter
 ) a
 WHERE Unit_Cost_Abs IS NOT NULL AND Unit_Cost_Abs != 0   --remove rows without a cost
 --remove rows where newly derived planned units per week is 0 or null unless the cost frequency is one-off
