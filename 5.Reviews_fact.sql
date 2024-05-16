@@ -12,7 +12,7 @@
 -- Create table of unique reviews based on fields in the partition --
 -----------------------------------------------------
 
---If any of LA_code, Person_ID, Event_Start_Date, Event_End_Date, Client_Type
+--If any of LA_code, Der_NHS_LA_Combined_Person_ID, Event_Start_Date, Event_End_Date, Client_Type
 -- differ then the record will be considered unique
 
 DROP TABLE IF EXISTS #Unique_Reviews;
@@ -31,7 +31,7 @@ SELECT
   Review_Outcomes_Achieved,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID, 
+  Der_NHS_LA_Combined_Person_ID, 
   CAST(NEWID() AS VARCHAR(100)) AS Review_ID -- add a row id for joining
 INTO #Unique_Reviews
 FROM (
@@ -39,7 +39,7 @@ FROM (
     DupRank = ROW_NUMBER() OVER (
       PARTITION BY 
         ISNULL(LA_Code, ''),
-        ISNULL(Der_Person_ID, ''),
+        ISNULL(Der_NHS_LA_Combined_Person_ID, ''),
         ISNULL(Event_Start_Date, ''),
         ISNULL(Event_End_Date, ''),
         ISNULL(Client_Type, '')
@@ -62,7 +62,7 @@ DROP TABLE IF EXISTS #LTS_Events;
 
 SELECT 
   LA_Code, 
-  Der_Person_ID, 
+  Der_NHS_LA_Combined_Person_ID, 
   Event_Start_Date as Service_Start_Date, 
   Event_End_Date as Service_End_Date
 INTO #LTS_Events
@@ -75,7 +75,7 @@ DROP TABLE IF EXISTS #Reviews_LTS_Joined;
 
 SELECT 
   t1.*,
-  t2.Der_Person_ID as LTS_Person_ID,
+  t2.Der_NHS_LA_Combined_Person_ID as LTS_Person_ID,
   t2.Service_Start_Date,
   t2.Service_End_Date,
   CASE 
@@ -86,8 +86,8 @@ SELECT
 INTO #Reviews_LTS_Joined
 FROM #Unique_Reviews  t1
 FULL JOIN #LTS_Events  t2
-  ON t1.Der_Person_ID = t2.Der_Person_ID AND t1.LA_Code = t2.LA_Code
-WHERE t1.Der_Person_ID IS NOT NULL
+  ON t1.Der_NHS_LA_Combined_Person_ID = t2.Der_NHS_LA_Combined_Person_ID AND t1.LA_Code = t2.LA_Code
+WHERE t1.Der_NHS_LA_Combined_Person_ID IS NOT NULL
 ORDER BY Review_ID, LTS_Flag DESC;
 
 -- Deduplicate to keep only 1 row per review (using review id previously created) and retain row LTS_flag 1 over 0
@@ -124,7 +124,7 @@ SELECT
   Review_Outcomes_Achieved,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   LTS_Flag,
   count(*) AS Event_Count
 INTO #Reviews_Aggregated
@@ -142,7 +142,7 @@ GROUP BY LA_Code,
   Review_Outcomes_Achieved,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   LTS_Flag;
 
 -----------------------------------------------------

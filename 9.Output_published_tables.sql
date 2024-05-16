@@ -14,12 +14,14 @@ DROP TABLE IF EXISTS
   DHSC_Reporting.LA_PBI_Costs_Fact,
   DHSC_Reporting.LA_PBI_Calendar_Dim,
   DHSC_Reporting.LA_PBI_Client_Type_Dim,
-  DHSC_Reporting.LA_PBI_Working_Age_Dim,
+  DHSC_Reporting.LA_PBI_Age_Bands_Dim,
   DHSC_Reporting.LA_PBI_DQ_Values_Aggregated,
   DHSC_Reporting.LA_PBI_Ethnicity_Dim,
   DHSC_Reporting.LA_PBI_Gender_Dim,
   DHSC_Reporting.LA_PBI_Geography_Dim,
-  DHSC_Reporting.LA_PBI_PSR_Dim;
+  DHSC_Reporting.LA_PBI_PSR_Dim,
+  DHSC_Reporting.LA_PBI_Long_Term_Waiting_Times,
+  DHSC_Reporting.LA_PBI_Short_Term_Waiting_Times;
 
 SELECT *
 INTO DHSC_Reporting.LA_PBI_Master_Table
@@ -54,8 +56,8 @@ INTO DHSC_Reporting.LA_PBI_Client_Type_Dim
 FROM ASC_Sandbox.LA_PBI_Client_Type_Dim;
 
 SELECT *
-INTO DHSC_Reporting.LA_PBI_Working_Age_Dim
-FROM ASC_Sandbox.LA_PBI_Working_Age_Dim;
+INTO DHSC_Reporting.LA_PBI_Age_Bands_Dim
+FROM ASC_Sandbox.LA_PBI_Age_Bands_Dim;
 
 SELECT *
 INTO DHSC_Reporting.LA_PBI_DQ_Values_Aggregated
@@ -76,5 +78,13 @@ FROM ASC_Sandbox.LA_PBI_Geography_Dim;
 SELECT *
 INTO DHSC_Reporting.LA_PBI_PSR_Dim
 FROM ASC_Sandbox.LA_PBI_PSR_Dim;
+
+SELECT *
+INTO DHSC_Reporting.LA_PBI_Long_Term_Waiting_Times
+FROM ASC_Sandbox.LA_PBI_Long_Term_Waiting_Times;
+
+SELECT *
+INTO DHSC_Reporting.LA_PBI_Short_Term_Waiting_Times
+FROM ASC_Sandbox.LA_PBI_Short_Term_Waiting_Times;
 
 

@@ -8,7 +8,7 @@
 -----------------------------------------------------
 
 -- Deduplicate to output unique services based on the fields in the partition
--- If any of LA_code, Person_ID, Event_Start_Date, Client_Type, Service_Type, Service_Component, Delivery_Mechanism,
+-- If any of LA_code, Der_NHS_LA_Combined_Person_ID, Event_Start_Date, Client_Type, Service_Type, Service_Component, Delivery_Mechanism,
 -- Unit_Cost, Planned_units_per_week or Cost_frequency_unit_type
 -- differ then the record will be considered unique
 
@@ -46,7 +46,7 @@ FROM (
     DupRank = ROW_NUMBER() OVER (
       PARTITION BY 
         ISNULL(LA_Code, ''),
-        ISNULL(Der_Person_id, ''),
+        ISNULL(Der_NHS_LA_Combined_Person_ID, ''),
         ISNULL(Event_Start_Date, ''),
         ISNULL(Client_Type, ''),
         ISNULL(Service_Type, ''),
@@ -80,7 +80,6 @@ SELECT
   ,Der_Age_Band
   ,Der_Working_Age_Band
   ,Primary_Support_Reason
-  ,Event_Reference
   ,Event_Start_Date
   ,Event_End_Date
   ,Event_Outcome
@@ -93,7 +92,7 @@ SELECT
   ,Unit_Cost
   ,Cost_Frequency_Unit_Type
   ,Planned_Units_Per_Week
-  ,Der_Person_ID
+  ,Der_NHS_LA_Combined_Person_ID
 INTO #Services_Aggregated
 FROM #Unique_Services;
 

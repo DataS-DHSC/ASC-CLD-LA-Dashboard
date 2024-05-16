@@ -10,13 +10,20 @@
 --------------------------------------------------------------------------
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31'
 DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
 
 --------------------------------------------------------------------------
 --Call the procedure which generates the data quality values --
 --------------------------------------------------------------------------
-EXEC ASC_Sandbox.GetDQValues @InputR1Table = 'ASC_Sandbox.LA_PBI_Master_Table', 
+
+-- Create a temporary table to store the master table record IDs
+DROP TABLE IF EXISTS #RecordIDs;
+SELECT Der_Unique_Record_ID
+INTO #RecordIDs
+FROM ASC_Sandbox.LA_PBI_Master_Table
+
+EXEC ASC_Sandbox.GetDQValues @InputTable = '#RecordIDs',
 @OutputDQTable = 'ASC_Sandbox.LA_PBI_DQ_Values_Aggregated_tmp'
 
 --------------------------------------------------------------------------

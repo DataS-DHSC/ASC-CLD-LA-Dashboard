@@ -12,8 +12,8 @@
 -----------------------------------------------------
 ---- Set reporting period dates -----
 -----------------------------------------------------
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-10-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31'
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31'
 
 
 -----------------------------------------------------
@@ -132,7 +132,7 @@ SELECT
   Service_Type,
   Service_Type_Grouped,
   Service_Component,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   Cost_Per_Week,
   Weeks_of_Service,
   Total_Cost_Period

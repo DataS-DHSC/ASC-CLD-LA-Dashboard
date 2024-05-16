@@ -2,7 +2,6 @@
 -- This code outputs the Requests_Fact table
 -- It filters the previously created master table and deduplicates to a table of unique events
 -- It adds on a flag for those receiving a Long Term service when the request was made
--- It identifies any requests with 'conversation' in the event description and outputs a copy of these for use the the assessments script
 -- It aggregates to LA level
 
 
@@ -13,12 +12,13 @@
 -----------------------------------------------------
 -- Create table of unique requests based on fields in the partition --
 -----------------------------------------------------
---If any of LA_code, Person_ID, Event_Start_Date, Event_End_Date, Client_Type, Request_Route_Of_Access
+--If any of LA_code, Der_NHS_LA_Combined_Person_ID, Event_Start_Date, Event_End_Date, Client_Type, Request_Route_Of_Access
 -- differ then the record will be considered unique
 
 DROP TABLE IF EXISTS #Unique_Requests
 
 SELECT 
+  Event_Type,
   LA_Code,
   LA_Name, 
   Client_Type,
@@ -34,15 +34,16 @@ SELECT
   Eligible_Needs_Identified,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   Der_Conversation,
+  Der_Conversation_1,
   CAST(NEWID() AS VARCHAR(100)) AS Request_ID -- add a row id for joining
 INTO #Unique_Requests
 FROM (
   SELECT *
   , DupRank = ROW_NUMBER() OVER (
       PARTITION BY ISNULL(LA_Code, ''),
-        ISNULL(Der_Person_ID, ''),
+        ISNULL(Der_NHS_LA_Combined_Person_ID, ''),
         ISNULL(Event_Start_Date, ''),
         ISNULL(Event_End_Date, ''),
         ISNULL(Client_Type, ''),
@@ -68,7 +69,7 @@ DROP TABLE IF EXISTS #LTS_Events;
 
 SELECT 
   LA_Code, 
-  Der_Person_ID, 
+  Der_NHS_LA_Combined_Person_ID, 
   Event_Start_Date AS Service_Start_Date, 
   Event_End_Date AS Service_End_Date
 INTO #LTS_Events
@@ -81,7 +82,7 @@ DROP TABLE IF EXISTS #Requests_LTS_Joined;
 
 SELECT 
   t1.*,
-  t2.Der_Person_ID AS LTS_Person_ID,
+  t2.Der_NHS_LA_Combined_Person_ID AS LTS_Person_ID,
   t2.Service_Start_Date,
   t2.Service_End_Date,
   CASE 
@@ -92,8 +93,8 @@ SELECT
 INTO #Requests_LTS_Joined
 FROM #Unique_Requests  t1
 FULL JOIN #LTS_Events  t2
-  ON t1.Der_Person_ID = t2.Der_Person_ID AND t1.LA_Code = t2.LA_Code
-WHERE t1.Der_Person_ID IS NOT NULL
+  ON t1.Der_NHS_LA_Combined_Person_ID = t2.Der_NHS_LA_Combined_Person_ID AND t1.LA_Code = t2.LA_Code
+WHERE t1.Der_NHS_LA_Combined_Person_ID IS NOT NULL
 ORDER BY Request_ID, LTS_Flag DESC;
 
 -- Deduplicate to keep only 1 row per request (using request id previously created) and retain row LTS_flag 1 over 0
@@ -109,35 +110,6 @@ FROM (
   FROM #Requests_LTS_Joined
   )t
 WHERE DupRank =1;
-
-
------------------------------------------------------
--- Store separately any requests which have 'conversation' in the event description field --
--- These are to be counted in the assessments code ---
-------------------------------------------------------
-DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Requests_Conversations;
-
-SELECT
-  LA_Code,
-  LA_Name, 
-  Client_Type,
-  Gender,
-  Ethnicity,
-  Primary_Support_Reason,
-  Request_Start_Date,
-  Request_End_Date,
-  Event_Outcome,
-  Event_Outcome_Grouped,
-  Der_Age_Band,
-  Der_Working_Age_Band,
-  Der_Person_ID,
-  LTS_Flag,
-  Assessment_Type,
-  Eligible_Needs_Identified
-INTO ASC_Sandbox.LA_PBI_Requests_Conversations
-FROM #Requests_LTS_Flagged
-WHERE Der_Conversation = 1;
-
 
 -----------------------------------------------------
 -- Aggregate up to LA level --
@@ -159,12 +131,13 @@ SELECT
   Request_Route_of_Access,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   LTS_Flag,
   count(*) AS Event_Count
 INTO #Requests_Aggregated
 FROM #Requests_LTS_Flagged
-GROUP BY LA_Code,
+GROUP BY 
+  LA_Code,
   LA_Name,
   Client_Type,
   Gender,
@@ -177,7 +150,7 @@ GROUP BY LA_Code,
   Request_Route_of_Access,
   Der_Age_Band,
   Der_Working_Age_Band,
-  Der_Person_ID,
+  Der_NHS_LA_Combined_Person_ID,
   LTS_Flag;
 
 -----------------------------------------------------

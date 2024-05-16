@@ -3,13 +3,13 @@
 ---------------------------
 
 -- This code creates a master dataset from which each event type can then be counted
--- It adds on all the required derived fields to one table for the purposes of the dashboard only
+-- It adds on all the required derived fields to one table for the purposes of the LA dashboard
  
 /* Step process:
 1. Takes the latest submission for each LA covering the specified reporting period
 2. Filters records to within the period of interest (Q1, Q2 etc), accounting for date of death when populated
 3. Derives the age at event end date using birth month and year (or reporting end date for services where end date is null), then converts this to age bands
-4. Creates new ID field based on NHS number unless null then LA ID
+4. Creates new person ID field based on NHS number unless null then LA person ID
 5. Creates planned and unplanned categories for reviews
 6. Creates categories for event outcome by grouping NFAs together
 7. Creates categories for services (long, short, carer)
@@ -24,13 +24,15 @@
 -----------------------------------------------------
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01' 
-DECLARE @ReportingPeriodEndDate AS DATE = '2023-12-31' 
-DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31' 
+DECLARE @SubmissionsAsOfDate AS DATE = GETDATE() --usually left as today's date unless trying to replicate figures as of a given date
 
 -- Create a temporary table to store the list of relevant submissions
 DROP TABLE IF EXISTS #Submissions;
 
-CREATE TABLE #Submissions (Der_Load_Filename VARCHAR(256));
+CREATE TABLE #Submissions 
+  (LA_Name VARCHAR(256),
+  ImportDate DATETIME);
 
 -- Execute the stored procedure which outputs the latest file for each LA covering the specified reporting period as of a given date
 -- Results are inserted into the temporary table
@@ -49,9 +51,9 @@ SELECT t2.*
 INTO #CLD_Reporting_Period
 FROM #Submissions t1
 LEFT JOIN DHSC_ASC.CLD_R1_Raw t2
-  ON t1.Der_Load_Filename = t2.Der_Load_Filename ;
+  ON t1.LA_Name = t2.LA_Name AND t1.ImportDate = t2.ImportDate ;
 
- 
+
 -----------------------------------------------------
 -- TEMP TABLE 1--
 -- Filter to events which fall within the period of interest, accounting for date of death
@@ -60,44 +62,54 @@ LEFT JOIN DHSC_ASC.CLD_R1_Raw t2
 
 DROP TABLE IF EXISTS #Temp1_Ages;
 
-
 SELECT *,
   CASE
-    WHEN Der_Latest_Age <18 THEN '<18'
-    WHEN Der_Latest_Age BETWEEN 18 AND 19 THEN '18-19' --age bands
-    WHEN Der_Latest_Age BETWEEN 20 AND 29 THEN '20-29'
-    WHEN Der_Latest_Age BETWEEN 30 AND 39 THEN '30-39'
-    WHEN Der_Latest_Age BETWEEN 40 AND 49 THEN '40-49'
-    WHEN Der_Latest_Age BETWEEN 50 AND 59 THEN '50-59'
-    WHEN Der_Latest_Age BETWEEN 60 AND 69 THEN '60-69'
-    WHEN Der_Latest_Age BETWEEN 70 AND 79 THEN '70-79'
-    WHEN Der_Latest_Age BETWEEN 80 AND 89 THEN '80-89'
-    WHEN Der_Latest_Age >=90 THEN '90+'
-    ELSE 'unknown'
+    WHEN Der_Latest_Age < 18 THEN 'Under 18'
+    WHEN Der_Latest_Age BETWEEN 18 AND 24 THEN '18 to 24'
+    WHEN Der_Latest_Age BETWEEN 25 AND 44 THEN '25 to 44'
+    WHEN Der_Latest_Age BETWEEN 45 AND 64 THEN '45 to 64'
+    WHEN Der_Latest_Age BETWEEN 65 AND 74 THEN '65 to 74'
+    WHEN Der_Latest_Age BETWEEN 75 AND 84 THEN '75 to 84'
+    WHEN Der_Latest_Age BETWEEN 85 AND 94 THEN '85 to 94'
+    WHEN Der_Latest_Age >= 95 THEN '95 and above'
+    ELSE 'Unknown'
   END AS Der_Age_Band,
   CASE
-    WHEN Der_Latest_Age <18 THEN '<18'  --working age bands
-    WHEN Der_Latest_Age <= 64 AND Der_Latest_Age >=18 THEN '18-64' 
-    WHEN Der_Latest_Age >= 65 THEN '65+'
-    ELSE 'unknown'
-  END AS der_working_age_band INTO #temp1_ages
+    WHEN Der_Latest_Age <18 THEN 'Under 18'  --working age bands
+    WHEN Der_Latest_Age <= 64 AND Der_Latest_Age >=18 THEN '18 to 64' 
+    WHEN Der_Latest_Age >= 65 THEN '65 and above'
+    ELSE 'Unknown'
+  END AS Der_Working_Age_Band
+INTO #Temp1_Ages
 FROM (
+
   SELECT *, -- Derive latest age at the end of an event (or reporting period if a service without an end date)
     CASE
       -- requests, assessments and reviews use event end date
-      WHEN der_birth_year IS NOT NULL AND event_type not like '%service%' 
-        THEN floor((datediff (DAY, (cast(concat(der_birth_year, '-', der_birth_month, '-', '01') AS date)), event_end_date))/365.25)
+      WHEN Der_Birth_Year IS NOT NULL AND Event_Type NOT LIKE '%service%' 
+        THEN FLOOR((DATEDIFF (DAY, (CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-', '01') AS DATE)), Der_Event_End_Date))/365.25)
       
       -- services use event end date when not null
-      WHEN der_birth_year IS NOT NULL AND event_type like '%service%' AND event_end_date IS NOT NULL 
-        THEN floor((datediff (DAY, (cast(concat(der_birth_year, '-', der_birth_month, '-', '01') AS date)), event_end_date))/365.25) --use end date for services if it isn't null
+      WHEN Der_Birth_Year IS NOT NULL AND Event_Type LIKE '%service%' AND Der_Event_End_Date IS NOT NULL 
+        THEN FLOOR((DATEDIFF (DAY, (CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-', '01') AS DATE)), Der_Event_End_Date))/365.25) --use end date for services if it isn't null
       
       -- services use reporting period end date when event end date is null
-      WHEN der_birth_year IS NOT NULL AND event_type like '%service%' AND event_end_date IS NULL 
-        THEN floor((datediff (DAY, (cast(concat(der_birth_year, '-', der_birth_month, '-', '01') AS date)), reporting_period_end_date))/365.25) --use reporting end date for services with null end date
+      WHEN Der_Birth_Year IS NOT NULL AND Event_Type LIKE '%service%' AND Der_Event_End_Date IS NULL 
+        THEN FLOOR((DATEDIFF (DAY, (CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-', '01') AS DATE)), Reporting_Period_End_Date))/365.25) --use reporting end date for services with null end date
       ELSE NULL 
-    END AS [Der_Latest_Age] 
+    END AS Der_Latest_Age,
+
+    --Clean event type
+    CASE 
+      WHEN Event_Type LIKE '%Service%' THEN 'Service' 
+      WHEN Event_Type LIKE '%Assessment%' THEN 'Assessment' 
+      WHEN Event_Type LIKE '%Request%' THEN 'Request'
+      WHEN Event_Type LIKE '%Review%' THEN 'Review'
+      ELSE Event_Type 
+    END AS Event_Type_Clean
+
   FROM (
+
     SELECT *, 
     --Check for date of death - when date of death is between event start and end dates or when event end date is null, 
     --replace event end date with date of death
@@ -109,15 +121,16 @@ FROM (
       END AS Der_Event_End_Date 
     FROM #CLD_Reporting_Period
     ) a
+
   ) b 
 --select requests, assessments, reviews which start before the end of the period and end withing the reporting period
-WHERE ((Event_Type not like '%service%' 
+WHERE ((Event_Type_Clean <> 'Service' 
   AND Der_Event_End_Date BETWEEN @ReportingPeriodStartDate AND @ReportingPeriodEndDate 
   AND Event_Start_Date <= @ReportingPeriodEndDate ) --any events with null start dates are by default excluded
   OR
 
 -- selects services which start before the reporting period end and end must be after the start or null
-  (Event_Type like '%service%' AND (Der_Event_End_Date >= @ReportingPeriodStartDate OR Der_Event_End_Date IS NULL)
+  (Event_Type_Clean = 'Service' AND (Der_Event_End_Date >= @ReportingPeriodStartDate OR Der_Event_End_Date IS NULL)
   AND Event_Start_Date <= @ReportingPeriodEndDate) )
 
 -- select records where date of death is null or greater than the reporting period start and event start dates
@@ -127,102 +140,22 @@ WHERE ((Event_Type not like '%service%'
 
 -----------------------------------------------------
 -- TEMP TABLE 2--
--- Create a new person ID field which is the NHS number where populated, if not then the LA person ID
--- Includes check as to whether the LA ID is associated with an NHS number in the latest person data table
+-- Create a new person ID field which is the LA provided NHS number, if null then the Traced NHS number
+-- If both NHS numbers are null then the LA person ID is used
 -- If a row doesn't have an LA ID or a NHS number then it will be excluded here 
 -----------------------------------------------------
---select rows which don't have an NHS Number but do have an LA ID
-
-DROP TABLE IF EXISTS #Missing_NHS;
-
-SELECT * 
-INTO #Missing_NHS
-FROM #Temp1_Ages
-WHERE Der_NHS_Number_Traced_Pseudo IS NULL AND Der_LA_Person_Unique_Identifier_Pseudo IS NOT NULL;
-
---Select rows which do have an NHS number
-DROP TABLE IF EXISTS #Provided_NHS;
-
-SELECT *,
-  Der_NHS_Number_Traced_Pseudo AS Der_Person_ID,
-  'NHS' AS ID_Source 
-INTO #Provided_NHS
-FROM #Temp1_Ages
-WHERE Der_NHS_Number_Traced_Pseudo IS NOT NULL;
-
---Create table of distinct LA IDs with the latest reported NHS number traced
---where LA IDs have multiple associated NHS numbers it takes the latest based on Der_Latest_Import_Flag,
---      Reporting period start and end dates (descending) and then the File record id as a last resort
---as of 27/07/23 there were 91 LA IDs with multiple NHS nos, out of 1.2m <0.01%
-
-DROP TABLE IF EXISTS #Person_ID_Lookup;
-
-SELECT * 
-INTO #Person_ID_Lookup
-FROM (
-  SELECT 
-    Der_NHS_Number_Traced_Pseudo,
-    Der_LA_Person_Unique_Identifier_Pseudo,
-    LA_Code,
-    LatestRecord = row_number() OVER (   
-      PARTITION BY isnull(LA_Code, ''),    --only include LA ID & LA code as we only want 1 NHS number per LA ID
-                   isnull(Der_LA_Person_Unique_Identifier_Pseudo, '')
-      ORDER BY Der_Latest_Import_Flag DESC, 
-               Reporting_Period_End_Date DESC, 
-               Reporting_Period_Start_Date DESC, 
-               Der_File_Record_ID DESC)
-  FROM DHSC_ASC.CLD_R1_Latest_Person_Data
-  --Keep the latest record for each LA ID and LA Code, and only where LA ID isn't blank
-  WHERE Der_NHS_Number_Traced_Pseudo IS NOT NULL 
-  ) a 
-WHERE LatestRecord = 1 AND Der_LA_Person_Unique_Identifier_Pseudo IS NOT NULL;
-
---Join those with a missing NHS number by LA ID onto the person table created above to see if an NHS number exists
-
-DROP TABLE IF EXISTS #Missing_Fixed_NHS;
-
-SELECT *,
-  CASE
-    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND t2_Der_NHS_Number_Traced_Pseudo IS NULL 
-      THEN Der_LA_Person_Unique_Identifier_Pseudo -- Use LA ID when it hasn't found an NHS no.
-    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND t2_Der_NHS_Number_Traced_Pseudo IS NOT NULL 
-      THEN t2_Der_NHS_Number_Traced_Pseudo --NHS no. where it's found a match
-  END AS Der_Person_ID,
-  --New field to identify the source of the person ID
-  CASE
-    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND t2_Der_NHS_Number_Traced_Pseudo IS NULL THEN 'LA'
-    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND t2_Der_NHS_Number_Traced_Pseudo IS NOT NULL THEN 'NHS'
-  END AS ID_Source
-INTO #Missing_Fixed_NHS
-FROM (
-  SELECT 
-    t1.*,
-    t2.Der_LA_Person_Unique_Identifier_Pseudo AS t2_Der_LA_Person_Unique_Identifier_Pseudo,
-    t2.LA_Code AS t2_LA_Code,
-    t2.Der_NHS_Number_Traced_Pseudo AS t2_Der_NHS_Number_Traced_Pseudo
-  FROM #Missing_NHS AS t1
-  LEFT JOIN #Person_ID_Lookup AS t2 
-  ON t1.Der_LA_Person_Unique_Identifier_Pseudo = t2.Der_LA_Person_Unique_Identifier_Pseudo
-  AND t1.LA_Code = t2.LA_Code
-  ) a;
-
---Remove unnecessary columns prior to combining tables back together
-
-ALTER TABLE #Missing_Fixed_NHS
-DROP COLUMN t2_Der_LA_Person_Unique_Identifier_Pseudo,
-  t2_Der_NHS_Number_Traced_Pseudo,
-  t2_LA_Code;
-
---Join the 2 tables back together (those with NHS number and those without)
 
 DROP TABLE IF EXISTS #Temp2_IDs;
 
-SELECT * 
+SELECT *,
+  CASE
+    WHEN Der_NHS_Number_Traced_Pseudo IS NOT NULL THEN Der_NHS_Number_Traced_Pseudo
+    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NOT NULL THEN Der_NHS_Number_Pseudo
+    WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NULL THEN Der_LA_Person_Unique_Identifier_Pseudo
+  END AS 'Der_NHS_LA_Combined_Person_ID'
 INTO #Temp2_IDs
-FROM #provided_nhs
-UNION
-SELECT *
-FROM #Missing_Fixed_NHS;
+FROM #Temp1_Ages
+
 
 -----------------------------------------------------
 -- TEMP TABLE 3--
@@ -238,17 +171,17 @@ DROP TABLE IF EXISTS #Temp3_Derived_Fields;
 
 SELECT *,
   CASE
-    WHEN Review_Reason LIKE '%unplanned%' AND Event_Type = 'Review' THEN 'Unplanned'
-    WHEN Review_Reason LIKE 'planned%' AND Event_Type = 'Review' THEN 'Planned'
-    WHEN (Review_Reason IS NULL oR Review_Reason ='') AND Event_type = 'Review' THEN NULL
-    WHEN Event_Type NOT LIKE '%Review%' THEN NULL
+    WHEN Review_Reason LIKE '%unplanned%' AND Event_Type_Clean = 'Review' THEN 'Unplanned'
+    WHEN Review_Reason LIKE 'planned%' AND Event_Type_Clean = 'Review' THEN 'Planned'
+    WHEN (Review_Reason IS NULL OR Review_Reason ='') AND Event_Type_Clean = 'Review' THEN NULL
+    WHEN Event_Type_Clean <> 'Review' THEN NULL
     ELSE 'Review Type Unknown'
   END AS Review_Type,
   CASE
     WHEN Service_Type LIKE '%long%' THEN 'Long Term'
     WHEN Service_Type LIKE '%short%' THEN 'Short Term'
     WHEN Service_Type LIKE '%Carer%' THEN 'Carer Support'
-    WHEN Event_Type NOT LIKE '%service%' THEN NULL
+    WHEN Event_Type_Clean <> 'Service' THEN NULL
     ELSE 'Unknown'
   END AS Service_Type_Grouped,
   --group all NFA reasons into one
@@ -348,17 +281,14 @@ SELECT
   Client_Type,
   Gender,
   Ethnicity,
-  Der_Age_Event_Start_Date,
-  [Der_Latest_Age],
+  Der_Latest_Age,
   Der_Age_Band,
   Der_Working_Age_Band,
   Date_of_Death,
   Primary_Support_Reason,
-  Event_Type,
-  Event_Reference,
+  Event_Type_Clean AS Event_Type,
   Event_Start_Date,
   Der_Event_End_Date AS Event_End_Date,
-  Event_Description,
   Event_Outcome_Nulled AS Event_Outcome,
   Event_Outcome_Hierarchy,
   Event_Outcome_Grouped,
@@ -377,38 +307,9 @@ SELECT
   Unit_Cost,
   Cost_Frequency_Unit_Type,
   Planned_units_per_week,
-  Provider_CQC_Location_ID,
-  Provider_CQC_Location_Name,
-  Der_Person_ID,
-  Der_File_Record_ID ,
-  Der_Unique_Record_ID,
-  Der_Unique_Event_Flag,
+  Der_NHS_LA_Combined_Person_ID,
   Der_Conversation,
-  --Following fields are kept solely for running the DQ checks procedure
-  Der_NHS_Number_Pseudo,
-  Der_LA_Person_Unique_Identifier_Pseudo,
-  GP_Practice_Code,
-  GP_Practice_Name,
-  Der_Birth_Year,
-  Der_Postcode_Sector,
-  Accommodation_Status,
-  Der_Age_Reporting_Period_End_Date,
-  Employment_Status,
-  Has_Unpaid_Carer,
-  Autism_Spectrum_Disorder_ASD,
-  Visual_Impairment,
-  Hearing_Impairment,
-  Dementia,
-  Client_Funding_Status,
-  Total_Hrs_Caring_per_week,
-  No_of_adults_being_cared_for,
-  Der_Adult_1_Linked_Person_ID_Pseudo,
-  Der_Adult_2_Linked_Person_ID_Pseudo,
-  Der_Adult_3_Linked_Person_ID_Pseudo,
-  Der_Duplicates_Flag,
-  ImportDate,
-  Der_Load_Filename,
-  Der_Latest_Import_Flag
+  Der_Conversation_1,
+  Der_Unique_Record_ID
 INTO ASC_Sandbox.LA_PBI_Master_Table
 FROM #Temp4_EO_Hierarchy;
-
