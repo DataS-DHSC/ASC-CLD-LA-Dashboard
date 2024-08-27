@@ -9,7 +9,7 @@
 --      ii. on or before the "as of" date 
 --   (NB there may be no files submitted by an LA that meet the above criteria)
 --
--- Returns table of LA_Name, Der_Load_Filename
+-- Returns table of LA_Name, ImportDate
 -- See example executions of procedure below
 ---------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS ASC_Sandbox.GetMandatorySubmissions
@@ -59,27 +59,11 @@ GO
 --  @ReportingPeriodEndDate = '2023-06-30',
 --  @SubmissionsAsOfDate = '2023-09-30'
 
----- 2) Dynamically calculate reporting period and input "as of" date
+---- 2) Declare reporting period and "as of" date
 
----- SUBMISSION DATE
----- Set submission date in current submission window:
---DECLARE @SubmissionDate AS DATE = GETDATE()
----- Set submission date in previous quarter submission window:
----- DECLARE @SubmissionDate AS DATE = DATEADD(month, -3, GETDATE())
-
----- "AS OF" DATE
----- Set "as of" date to today
---DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
----- Set "as of" date to end of previous quarter submission window
----- DECLARE @SubmissionsAsOfDate AS DATE = DATEADD(quarter, DATEDIFF(quarter, 0, GETDATE()), -1)
-
---DECLARE @ReportingPeriodStartDate DATE
---DECLARE @ReportingPeriodEndDate DATE
-
---EXEC ASC_Sandbox.GetMandatoryReportingPeriod
---  @SubmissionDate = @SubmissionDate,
---  @ReportingPeriodStartDate = @ReportingPeriodStartDate OUTPUT,
---  @ReportingPeriodEndDate = @ReportingPeriodEndDate OUTPUT
+--DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
+--DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31'
+--DECLARE @SubmissionsAsOfDate AS DATE = '2024-07-31'
 
 --EXEC ASC_Sandbox.GetMandatorySubmissions
 --  @ReportingPeriodStartDate = @ReportingPeriodStartDate,

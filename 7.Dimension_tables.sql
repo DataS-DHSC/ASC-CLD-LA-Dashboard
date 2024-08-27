@@ -5,8 +5,8 @@
 
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 
@@ -49,6 +49,13 @@ SELECT
         'Q', DATEPART(QUARTER, Calendar_Date)-1)
     ELSE 'Q4'
     END AS [Quarter_Name],
+  CASE
+    WHEN DATEPART(MONTH, Calendar_Date)>=4
+    THEN CONCAT(
+       RIGHT(CAST(YEAR(Calendar_Date) AS VARCHAR(4)),2) + '-' + RIGHT(CAST(YEAR(Calendar_Date) +1 AS VARCHAR(4)), 2), '_', 'Q', DATEPART(QUARTER, Calendar_Date)-1)
+    ELSE CONCAT(
+        RIGHT(CAST(YEAR(Calendar_Date) -1 AS VARCHAR(4)),2) + '-' + RIGHT(CAST(YEAR(Calendar_Date) AS VARCHAR(4)), 2), '_', 'Q4')
+    END AS [Quarter_Name_Year], 
   @ReportingPeriodStartDate AS Reporting_Period_Start_Date,
   @ReportingPeriodEndDate AS Reporting_Period_End_Date,
   CONCAT(FORMAT(@ReportingPeriodStartDate, 'MMM yy'), ' - ', FORMAT(@ReportingPeriodEndDate, 'MMM yy')) AS Current_Reporting_Period,
@@ -58,6 +65,7 @@ SELECT
       THEN CONCAT(FORMAT(DATEADD(MONTH, +3, @ReportingPeriodStartDate), 'MMM yy'), ' - ', FORMAT(@ReportingPeriodEndDate, 'MMM yy'))
     ELSE CONCAT(FORMAT(DATEADD(MONTH, 0, @ReportingPeriodStartDate), 'MMM yy'), ' - ', FORMAT(@ReportingPeriodEndDate, 'MMM yy'))
     END AS Waiting_Times_Period_Covered,
+    'Apr 23 - Apr 24' AS ASCOF_Period_Covered,
   GETDATE() AS Refresh_Date
 INTO ASC_Sandbox.LA_PBI_Calendar_Dim
 FROM d

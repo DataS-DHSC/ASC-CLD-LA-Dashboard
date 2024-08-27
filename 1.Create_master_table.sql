@@ -23,8 +23,8 @@
 -- Filter to the specified reporting period --
 -----------------------------------------------------
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01' 
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31' 
+DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01' 
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30' 
 DECLARE @SubmissionsAsOfDate AS DATE = GETDATE() --usually left as today's date unless trying to replicate figures as of a given date
 
 -- Create a temporary table to store the list of relevant submissions

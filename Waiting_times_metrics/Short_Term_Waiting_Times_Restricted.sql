@@ -9,8 +9,8 @@ DROP TABLE IF EXISTS #Short_Term_Clients;
 DROP TABLE IF EXISTS #temp;
 DROP TABLE IF EXISTS #Short_Term_Dates;
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01';
-DECLARE @FirstEventEndDate AS DATE = '2023-04-01';
+DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01';
+DECLARE @FirstEventEndDate AS DATE = '2023-07-01';
 
 -- SECTION 1 --
 -- Create table of clients where the first event they receive is a not a service or review --

@@ -9,8 +9,8 @@
 --Set the reporting period dates--
 --------------------------------------------------------------------------
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-03-31'
+DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30'
 DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
 
 --------------------------------------------------------------------------
@@ -36,11 +36,10 @@ SELECT
   LA_Name,
   LA_Code,
   Module,
-  Variable,
-  Applicable,
-  Mandatory,
-  DQ_Test_Result,
-  Value,
+  DataField,
+  FieldStatus,
+  FieldValidity,
+  [Value],
   Sum(Count) AS Count
 INTO ASC_Sandbox.LA_PBI_DQ_Values_Aggregated
 FROM (
@@ -48,10 +47,9 @@ FROM (
     'England' AS 'LA_Name',
     '99999' AS 'LA_Code',
     Module,
-    Variable,
-    Applicable,
-    Mandatory,
-    DQ_Test_Result,
+    DataField,
+    FieldStatus,
+    FieldValidity,
     NULL AS 'Value',
     Count
   FROM ASC_Sandbox.LA_PBI_DQ_Values_Aggregated_tmp dq
@@ -60,11 +58,10 @@ FROM (
     LA_Name,
     LA_Code,
     Module,
-    Variable,
-    Applicable,
-    Mandatory,
-    DQ_Test_Result,
-    Value,
+    DataField,
+    FieldStatus,
+    FieldValidity,
+    [Value],
     Count
   FROM ASC_Sandbox.LA_PBI_DQ_Values_Aggregated_tmp
   ) a
@@ -72,10 +69,9 @@ GROUP BY
   LA_Name,
   LA_Code,
   Module,
-  Variable,
-  Applicable,
-  Mandatory,
-  DQ_Test_Result,
-  Value
+  DataField,
+  FieldStatus,
+  FieldValidity,
+  [Value]
 
 DROP TABLE ASC_Sandbox.LA_PBI_DQ_Values_Aggregated_tmp;

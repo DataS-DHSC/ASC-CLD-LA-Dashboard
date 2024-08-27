@@ -21,7 +21,9 @@ DROP TABLE IF EXISTS
   DHSC_Reporting.LA_PBI_Geography_Dim,
   DHSC_Reporting.LA_PBI_PSR_Dim,
   DHSC_Reporting.LA_PBI_Long_Term_Waiting_Times,
-  DHSC_Reporting.LA_PBI_Short_Term_Waiting_Times;
+  DHSC_Reporting.LA_PBI_Short_Term_Waiting_Times,
+  DHSC_Reporting.LA_PBI_ASCOF,
+  DHSC_Reporting.LA_PBI_ASCOF_Excl;
 
 SELECT *
 INTO DHSC_Reporting.LA_PBI_Master_Table
@@ -87,4 +89,10 @@ SELECT *
 INTO DHSC_Reporting.LA_PBI_Short_Term_Waiting_Times
 FROM ASC_Sandbox.LA_PBI_Short_Term_Waiting_Times;
 
+SELECT *
+INTO DHSC_Reporting.LA_PBI_ASCOF
+FROM ASC_Sandbox.LA_PBI_ASCOF;
 
+SELECT *
+INTO DHSC_Reporting.LA_PBI_ASCOF_Excl
+FROM ASC_Sandbox.LA_PBI_ASCOF_Excl;
