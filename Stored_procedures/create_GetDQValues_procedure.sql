@@ -21,9 +21,9 @@ AS
   SET NOCOUNT ON;
   DECLARE @Query NVARCHAR(MAX)
 
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.DQ_InputTable
   SET @Query = 'DROP TABLE IF EXISTS ' + @OutputDQTable + ';
-                CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable
+                CREATE SYNONYM ASC_Sandbox.DQ_InputTable FOR ' + @InputTable
   EXEC(@Query)
    
   SELECT
@@ -59,7 +59,7 @@ AS
       cond_,
       chk_,
       [Value]
-    FROM ASC_Sandbox.InputTable Record_IDs
+    FROM (SELECT Der_Unique_Record_ID FROM ASC_Sandbox.DQ_InputTable) Record_IDs
     LEFT JOIN DHSC_ASC.CLD_DQ_Items_R1 DQ_Items
     ON DQ_Items.Der_Unique_Record_ID = Record_IDs.Der_Unique_Record_ID
     CROSS APPLY (
@@ -326,7 +326,7 @@ AS
 
   SET @Query = 'SELECT * INTO ' + @OutputDQTable + ' FROM #OutputTable'
   EXEC(@Query)
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.DQ_InputTable
 
 GO
 
