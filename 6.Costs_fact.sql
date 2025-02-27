@@ -6,14 +6,15 @@
 --It derives new fields 'weeks_of_service', 'total_cost_period' and 'cost_per_week'
 
 -------PRE-REQUISTIES--------
---1. Run create master table script
---2. Run services script
+--1. Single submission table for latest period has been produced
+--2. Dashboard master table has been produced
+--3. Services Fact table has been produced
 
 -----------------------------------------------------
 ---- Set reporting period dates -----
------------------------------------------------------
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30'
+
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-10-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31'
 
 
 -----------------------------------------------------
@@ -103,14 +104,14 @@ FROM (
       WHEN ISNULL(Cost_Frequency_Unit_Type, '') != 'one-off' AND 
         Event_Start_Date >= @ReportingPeriodStartDate AND 
         (Event_End_Date >  @ReportingPeriodEndDate OR event_end_date IS NULL)
-      THEN (DATEDIFF(day, Event_Start_Date, @ReportingPeriodEndDate)+1)/7.0
+      THEN (DATEDIFF(DAY, Event_Start_Date, @ReportingPeriodEndDate)+1)/7.0
       WHEN ISNULL(Cost_Frequency_Unit_Type, '') != 'one-off' AND 
         Event_Start_Date < @ReportingPeriodStartDate AND 
         (Event_End_Date >  @ReportingPeriodEndDate  OR event_end_date IS NULL)
-      THEN (DATEDIFF(day, @ReportingPeriodStartDate, @ReportingPeriodEndDate)+1)/7.0
+      THEN (DATEDIFF(DAY, @ReportingPeriodStartDate, @ReportingPeriodEndDate)+1)/7.0
       ELSE NULL
     END AS Weeks_of_Service
-  from #Costs_Clean
+  FROM #Costs_Clean
 ) a;
 
 -----------------------------------------------------
@@ -136,5 +137,5 @@ SELECT
   Cost_Per_Week,
   Weeks_of_Service,
   Total_Cost_Period
-into ASC_Sandbox.LA_PBI_Costs_Fact
-from #Costs_Derived;
+INTO ASC_Sandbox.LA_PBI_Costs_Fact
+FROM #Costs_Derived;

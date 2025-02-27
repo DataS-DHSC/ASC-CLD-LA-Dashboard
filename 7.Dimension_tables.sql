@@ -1,12 +1,13 @@
 ---------Creation of dimension tables for powerBI ---------
 
 -------PRE-REQUISTIES--------
---1. Run create master table script
+--1. Single submission table for latest period has been produced
+--2. Dashboard master table has been produced
 
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30';
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 
@@ -71,7 +72,6 @@ INTO ASC_Sandbox.LA_PBI_Calendar_Dim
 FROM d
 ORDER BY Calendar_Date
 OPTION (MAXRECURSION 0);
-
 
 ------------------------
 ----GEOGRAPHY TABLE-----

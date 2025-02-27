@@ -3,15 +3,16 @@
 ---------------------------------------------------------------------------
 
 -------PRE-REQUISTIES--------
---1. Run create master table script
+--1. Single submission table for latest period has been produced
+--2. Dashboard master table has been produced
 
 --------------------------------------------------------------------------
 --Set the reporting period dates--
 --------------------------------------------------------------------------
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2023-07-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-06-30'
-DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31'
+DECLARE @SubmissionsAsOfDate AS DATE = GETDATE() 
 
 --------------------------------------------------------------------------
 --Call the procedure which generates the data quality values --

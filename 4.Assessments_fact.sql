@@ -1,13 +1,14 @@
 ------  ASSESSMENTS FACT TABLE ------
 -- This code outputs the Assessments_Fact table
--- It filters the previously created master table and deduplicates to a table of unique events
+-- It filters the already processed table of latest submissions covering the latest reporting period to assessment events
 -- It adds on a flag for those receiving a Long Term service when the assessment started
 -- It aggregates to LA level
 
 
 -------PRE-REQUISTIES--------
---1. Run create master table script
---2. Run services script
+--1. Single submission table for latest period has been produced
+--2. Dashboard master table has been produced
+--3. Services Fact table has been produced
 
 -----------------------------------------------------
 -- Create table of unique assessments based on fields in the partition --
@@ -37,28 +38,10 @@ SELECT
   Der_NHS_LA_Combined_Person_ID,
   Der_conversation,
   Der_conversation_1,
-  CAST(NEWID() AS VARCHAR(100)) AS Assessment_ID -- add a row id for joining
+  Der_Unique_Event_Ref
 INTO #Unique_Assessments
-FROM (
-  SELECT *,
-    DupRank = ROW_NUMBER() OVER (
-      PARTITION BY 
-        ISNULL(LA_Code, ''),
-        ISNULL(Der_NHS_LA_Combined_Person_ID, ''),
-        ISNULL(Event_Start_Date, ''),
-        ISNULL(Event_End_Date, ''),
-        ISNULL(Client_Type, ''),
-        ISNULL(Assessment_Type, '')
-      ORDER BY Reporting_Period_End_Date DESC, 
-        Reporting_Period_Start_Date DESC,
-        Event_Outcome_Hierarchy ASC,
-        Der_Unique_Record_ID DESC  
-        )
-  FROM ASC_Sandbox.LA_PBI_Master_Table
-  WHERE Event_Type LIKE '%assessment%'
-) AS T
-WHERE DupRank = 1;
-
+FROM ASC_Sandbox.LA_PBI_Master_Table
+WHERE Event_Type LIKE 'Assessment'
 
 -----------------------------------------------------------------------
 -- Identify who had a long term service open when the assessment started --
@@ -74,7 +57,7 @@ SELECT
   Event_End_Date AS Service_End_Date
 INTO #LTS_Events
 FROM ASC_Sandbox.LA_PBI_Services_Fact
-WHERE Service_Type_Grouped ='Long Term';
+WHERE Service_Type_Grouped ='Long Term Support';
 
 
 --Join together assessment and long term services
@@ -95,7 +78,7 @@ FROM #Unique_Assessments  t1
 FULL JOIN #LTS_Events  t2
   ON t1.Der_NHS_LA_Combined_Person_ID = t2.Der_NHS_LA_Combined_Person_ID AND t1.LA_Code = t2.LA_Code
 WHERE t1.Der_NHS_LA_Combined_Person_ID IS NOT NULL
-ORDER BY Assessment_ID, LTS_Flag DESC;
+ORDER BY Der_Unique_Event_Ref, LTS_Flag DESC;
 
 -- Deduplicate to keep only 1 row per assessment (using assessment id previously created) and retain row LTS_flag 1 over 0
 DROP TABLE IF EXISTS #Assessments_LTS_flagged;
@@ -105,7 +88,7 @@ INTO #Assessments_LTS_Flagged
 FROM (
   SELECT *
   , DupRank = ROW_NUMBER() OVER (
-      PARTITION BY ISNULL(Assessment_ID, '')
+      PARTITION BY ISNULL(Der_Unique_Event_Ref, '')
       ORDER BY LTS_Flag DESC )
   FROM #Assessments_LTS_Joined )t
 WHERE DupRank =1;
@@ -115,7 +98,7 @@ WHERE DupRank =1;
 -- Aggregate up to LA level --
 -- Aggregation groups by multiple fields incl. person id and therefore retains mostly row-level data
 -----------------------------------------------------
-DROP TABLE IF EXISTS #Assessments_Aggregated
+DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Assessments_Fact
 
 SELECT 
   Event_Type,
@@ -138,7 +121,7 @@ SELECT
   Der_conversation,
   Der_conversation_1,
   count(*) AS Event_Count
-INTO #Assessments_Aggregated
+INTO ASC_Sandbox.LA_PBI_Assessments_Fact
 FROM #Assessments_LTS_Flagged
 GROUP BY 
   Event_Type,
@@ -160,14 +143,5 @@ GROUP BY
   LTS_Flag,
   Der_Conversation,
   Der_Conversation_1;
-
-
------------------------------------------------------
--- Output to fact table
------------------------------------------------------
-DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Assessments_Fact
-SELECT *
-INTO ASC_Sandbox.LA_PBI_Assessments_Fact
-FROM #Assessments_Aggregated;
 
 
