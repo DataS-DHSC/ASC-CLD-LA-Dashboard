@@ -70,17 +70,17 @@ AS
       Gender AS Gender_Raw,
       Gender_Cleaned,
       Ethnicity AS Ethnicity_Raw,
-      Ethnicity_Cleaned,
+      Ethnicity_Cleaned_R1 as Ethnicity_Cleaned,
       Event_Outcome AS Event_Outcome_Raw,
-      Event_Outcome_Cleaned,
+      Event_Outcome_Cleaned_R1 as Event_Outcome_Cleaned,
       Event_Outcome_Hierarchy,
       Service_Type AS Service_Type_Raw,
-      Service_Type_Cleaned,
+      Service_Type_Cleaned_R1 as Service_Type_Cleaned,
 
       -- Derive high level categories
-      Ethnicity_Grouped,
-      Event_Outcome_Grouped,
-      Service_Type_Grouped,
+      Ethnicity_Grouped_R1 as Ethnicity_Grouped,
+      Event_Outcome_Grouped_R1 as Event_Outcome_Grouped,
+      Service_Type_Grouped_R1 as Service_Type_Grouped,
 
       -- Derive review type field
       CASE
@@ -109,7 +109,7 @@ AS
     LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo
     ON a.Event_Outcome = eo.Event_Outcome_Raw
     LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy eoh
-    ON eo.Event_Outcome_Cleaned = eoh.Event_Outcome_Spec
+    ON eo.Event_Outcome_Cleaned_R1 = eoh.Event_Outcome_Spec
   ) b
 
   -- Drop original Gender, Ethnicity, Service_Type and Event_Outcome fields to highlight "_Raw" / "_Cleaned" fields
@@ -197,7 +197,7 @@ AS
       ELSE 'Unknown'
     END AS Der_Working_Age_Band
 
-  INTO #OutputTable
+  INTO #Temp_der_age
   FROM (
     SELECT
       *,
@@ -217,6 +217,127 @@ AS
       END AS Der_Latest_Age
       FROM #Temp
     ) c
+
+  ---------------------------------------------------------------------------
+  -- Map observation from release 2 to release 1
+  -- These reference tables do not yet have complete cleaning, so they take cleaned variable if possible, if not raw variable
+  -- Complete cleaning to be implemented at later date
+  -- Variables named cleaned to prevent variable names in code having to be updated multiple time in a short period of time
+  ---------------------------------------------------------------------------
+
+    select 
+        d.*,
+        case when Client_Funding_Status_Cleaned_R1 is not null then Client_Funding_Status_Cleaned_R1
+        else Client_Funding_Status end as Client_Funding_Status_Cleaned,
+        Client_Funding_Status as Client_Funding_Status_Raw,
+
+        case when Client_Type_Cleaned_R1 is not null then Client_Type_Cleaned_R1
+        else Client_Type end as Client_Type_Cleaned,
+        Client_Type as Client_Type_Raw,
+
+        case when Delivery_Mechanism_Cleaned_R1 is not null then Delivery_Mechanism_Cleaned_R1
+        else Delivery_Mechanism end as Delivery_Mechanism_Cleaned,
+        Delivery_Mechanism as Delivery_Mechanism_Raw,
+
+        case when Assessment_Type_Cleaned_R1 is not null then Assessment_Type_Cleaned_R1
+        else Assessment_Type end as Assessment_Type_Cleaned,
+        Assessment_Type as Assessment_Type_Raw,
+
+        case when Hearing_Impairment_Cleaned_R1 is not null then Hearing_Impairment_Cleaned_R1
+        else Hearing_Impairment end as Hearing_Impairment_Cleaned,
+        Hearing_Impairment as Hearing_Impairment_Raw,
+
+        case when Method_Of_Assessment_Cleaned_R1 is not null then Method_Of_Assessment_Cleaned_R1
+        else Method_Of_Assessment end as Method_of_Assessment_Cleaned,
+        Method_Of_Assessment as Method_of_Assessment_Raw,
+
+        case when Method_Of_Review_Cleaned_R1 is not null then Method_Of_Review_Cleaned_R1
+        else Method_Of_Review end as Method_of_Review_Cleaned,
+        Method_Of_Review as Method_of_Review_Raw,
+
+        case when Primary_Support_Reason_Cleaned_R1 is not null then Primary_Support_Reason_Cleaned_R1
+        else Primary_Support_Reason end as Primary_Support_Reason_Cleaned,
+        Primary_Support_Reason as Primary_Support_Reason_Raw,
+
+        case when Request_Route_Of_Access_Cleaned_R1 is not null then Request_Route_Of_Access_Cleaned_R1
+        else Request_Route_Of_Access end as Request_Route_Of_Access_Cleaned,
+        Request_Route_Of_Access as Request_Route_Of_Access_Raw,
+
+        case when Review_Outcomes_Achieved_Cleaned_R1 is not null then Review_Outcomes_Achieved_Cleaned_R1
+        else Review_Outcomes_Achieved end as Review_Outcomes_Achieved_Cleaned,
+        Review_Outcomes_Achieved as Review_Outcomes_Achieved_Raw,
+
+        case when Review_Reason_Cleaned_R1 is not null then Review_Reason_Cleaned_R1
+        else Review_Reason end as Review_Reason_Cleaned,
+        Review_Reason as Review_Reason_Raw,
+
+        case when Accommodation_Status_Cleaned_R1 is not null then Accommodation_Status_Cleaned_R1
+        else Accommodation_Status end as Accommodation_Status_Cleaned,
+        Accommodation_Status as Accommodation_Status_Raw,
+
+        case when Cost_Frequency_Unit_Type_Cleaned_R1 is not null then Cost_Frequency_Unit_Type_Cleaned_R1
+        else Cost_Frequency_Unit_Type end as Cost_Frequency_Unit_Type_Cleaned,
+        Cost_Frequency_Unit_Type as Cost_Frequency_Unit_Type_Raw,
+
+        case when Employment_Status_Cleaned_R1 is not null then Employment_Status_Cleaned_R1
+        else Employment_Status end as Employment_Status_Cleaned,
+        Employment_Status as Employment_Status_Raw,
+
+        case when Service_Component_Cleaned_R1 is not null then Service_Component_Cleaned_R1
+        else Service_Component end as Service_Component_Cleaned,
+        Service_Component as Service_Component_Raw,
+
+        case when Total_Hrs_Caring_Per_Week_Cleaned_R1 is not null then Total_Hrs_Caring_Per_Week_Cleaned_R1
+        else Total_Hrs_Caring_Per_Week end as Total_Hrs_Caring_Per_Week_Cleaned,
+        Total_Hrs_Caring_Per_Week as Total_Hrs_Caring_Per_Week_Raw,
+        Total_Hrs_Caring_Per_Week_Cleaned_R2,
+
+        case when Visual_Impairment_Cleaned_R1 is not null then Visual_Impairment_Cleaned_R1
+        else Visual_Impairment end as Visual_Impairment_Cleaned,
+        Visual_Impairment as Visual_Impairment_Raw
+
+    into #OutputTable
+
+    from #Temp_der_age as d left join
+        ASC_Sandbox.REF_Client_Funding_Status_Mapping as cfs
+        on d.Client_Funding_Status = cfs.Client_Funding_Status_Raw left join
+        ASC_Sandbox.REF_Client_Type_Mapping as ct
+        on d.Client_Type = ct.Client_Type_Raw left join
+        ASC_Sandbox.REF_Delivery_Mechanism_Mapping as dm
+        on d.Delivery_Mechanism = dm.Delivery_Mechanism_Raw left join
+        ASC_Sandbox.REF_Assessment_Type_Mapping as aty
+        on d.Assessment_Type = aty.Assessment_Type_Raw left join 
+        ASC_Sandbox.REF_Hearing_Impairment_Mapping as hi
+        on d.Hearing_Impairment = hi.Hearing_Impairment_Raw left join
+        ASC_Sandbox.REF_Method_Of_Assessment_Mapping as moa
+        on d.Method_Of_Assessment = moa.Method_Of_Assessment_Raw left join
+        ASC_Sandbox.REF_Method_Of_Review_Mapping as mor
+        on d.Method_Of_Review = mor.Method_Of_Review_Raw left join
+        ASC_Sandbox.REF_Primary_Support_Reason_Mapping as psr
+        on d.Primary_Support_Reason = psr.Primary_Support_Reason_Raw left join
+        ASC_Sandbox.REF_Request_Route_of_Access_Mapping as rra
+        on d.Request_Route_Of_Access = rra.Request_Route_Of_Access_Raw left join
+        ASC_Sandbox.REF_Review_Outcomes_Achieved_Mapping as roa
+        on d.Review_Outcomes_Achieved = roa.Review_Outcomes_Achieved_Raw left join
+        ASC_Sandbox.REF_Review_Reason_Mapping as rr
+        on d.Review_Reason = rr.Review_Reason_Raw left join
+        ASC_Sandbox.REF_Accommodation_Status_Mapping as accom 
+        on d.Accommodation_Status = accom.Accommodation_Status_Raw left join
+        ASC_Sandbox.REF_Cost_Frequency_Mapping as cf
+        on d.Cost_Frequency_Unit_Type = cf.Cost_Frequency_Unit_Type_Raw left join
+        ASC_Sandbox.REF_Employment_Status_Mapping as es
+        on d.Employment_Status = es.Employment_Status_Raw left join
+        ASC_Sandbox.REF_Service_Component_Mapping as sc
+        on d.Service_Component = sc.Service_Component_Raw left join
+        ASC_Sandbox.REF_Total_Hrs_Caring_Per_Week_Mapping as tot 
+        on d.Total_Hrs_Caring_Per_Week = tot.Total_Hrs_Caring_Per_Week_Raw left join
+        ASC_Sandbox.REF_Visual_Impairment_Mapping as vi
+        on d.Visual_Impairment = vi.Visual_Impairment_Raw
+   
+
+    -- Drop original [variable] to highlight copy named [variable]_raw and cleaned version [varaible]_cleaned 
+    alter table #OutputTable
+    drop column Client_Funding_Status, Client_Type, Delivery_Mechanism, Assessment_Type, Method_Of_Assessment, Method_Of_Review, Primary_Support_Reason, Request_Route_Of_Access, Review_Outcomes_Achieved, Review_Reason, Accommodation_Status, Cost_Frequency_Unit_Type, Employment_Status, Service_Component, Total_Hrs_Caring_Per_Week, Visual_Impairment
 
   SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable'
 

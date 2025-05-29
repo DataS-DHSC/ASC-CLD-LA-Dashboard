@@ -12,14 +12,16 @@ Caveats:
 e.g. cost, and we don't have the historic 22/23 information to check for prior start dates. 
 This should resolve from 23/24 onwards
 
+*24/25 onwards - this code has been adapted for use on the 24/25 main tables as these tables contain different field names where R2 to R1 mapping has been applied
+
 */
 
 
 
-DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2BC
+DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2BC_2425_Onwards
 GO
 
-CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2BC
+CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2BC_2425_Onwards
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @InputTable AS NVARCHAR(50),
@@ -49,11 +51,11 @@ SELECT *,
 INTO ASC_Sandbox.ASCOF_2BC_Build
 FROM ASC_Sandbox.InputTable
 WHERE  Event_Type = 'Service' 
-AND Client_Type = 'Service User' 
+AND Client_Type_Cleaned = 'Service User' 
 AND (Service_Type_Cleaned = 'Long Term Support: Residential Care' or Service_Type_Cleaned = 'Long Term Support: Nursing Care') 
 AND (Der_Birth_Month is not NULL and Der_Birth_Year is not NULL)
-AND (Service_Component IS NULL OR Service_Component LIKE '%Residential%' OR Service_Component LIKE '%Nursing%')  --exclude any services which indicate they aren't LT res/nurs
-AND Service_Component NOT LIKE '%Short%';
+AND (Service_Component_Cleaned IS NULL OR Service_Component_Cleaned LIKE '%Residential%' OR Service_Component_Cleaned LIKE '%Nursing%')  --exclude any services which indicate they aren't LT res/nurs
+AND Service_Component_Cleaned NOT LIKE '%Short%';
 
 --================== 2. Admissions within the year =====================
 
@@ -61,17 +63,15 @@ AND Service_Component NOT LIKE '%Short%';
 DROP TABLE IF EXISTS #Admissions;
 
 SELECT DISTINCT 
-  a.Der_NHS_LA_Combined_Person_ID, 
-  a.LA_Code, 
-  a.LA_Name, 
-  a.Event_start_Date,
-  a.Latest_Age
+  Der_NHS_LA_Combined_Person_ID, 
+  LA_Code, 
+  LA_Name, 
+  Event_start_Date,
+  Latest_Age
 INTO #Admissions
-FROM ASC_Sandbox.ASCOF_2BC_Build a
-LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping b
-ON a.Event_Outcome_Raw = b.Event_Outcome_Raw
+FROM ASC_Sandbox.ASCOF_2BC_Build
 WHERE Event_Start_Date BETWEEN @ReportingPeriodStartDate AND  @ReportingPeriodEndDate
-AND (b.Event_Outcome_Cleaned_R1 IS NULL OR b.Event_Outcome_Cleaned_R1 <> 'NFA - Self-funded client (Inc. 12wk disregard)');  
+AND (Event_Outcome_Cleaned IS NULL OR Event_Outcome_Cleaned <> 'NFA - Self-funded client (Inc. 12wk disregard)');  
 -- ^ exclude admissions which ended as a person went onto self-fund
 
 
@@ -205,9 +205,9 @@ GO
 
 /*
 ---- Example execution:
-EXEC ASC_Sandbox.Create_ASCOF2BC 
-  @ReportingPeriodStartDate = '2023-10-01',
-  @ReportingPeriodEndDate = '2024-09-30', 
-  @InputTable = 'ASC_Sandbox.CLD_230401_240930_JoinedSubmissions', 
+EXEC ASC_Sandbox.Create_ASCOF2BC_2425_Onwards 
+  @ReportingPeriodStartDate = '2024-04-01',
+  @ReportingPeriodEndDate = '2025-03-31', 
+  @InputTable = 'ASC_Sandbox.CLD_230401_250331_JoinedSubmissions', 
   @OutputTable = 'ASC_Sandbox.ASCOF_2BC_Revised'
 */

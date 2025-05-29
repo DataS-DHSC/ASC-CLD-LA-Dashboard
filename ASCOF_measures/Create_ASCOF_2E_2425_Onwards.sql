@@ -22,15 +22,16 @@ Pre-requisites:
   -- If the latest accommodation status is unknown or invalid, service information is assessed to see if accommodation status can be deduced
   -- Unknowns and invalids are included in the denominator
 
+*24/25 onwards - this code has been adapted for use on the 24/25 main tables as these tables contain different field names where R2 to R1 mapping has been applied
 
 */
 ----------------------------------------------------------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2E
+DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2E_2425_Onwards
 
 GO
 
-CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2E
+CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2E_2425_Onwards
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @LD_Filter INT, -- This can be filtered to learning disability (1) or all clients (0)
@@ -134,7 +135,7 @@ AS
       LA_Code,
       LA_Name,
       Der_NHS_LA_Combined_Person_ID,
-      Primary_Support_Reason
+      Primary_Support_Reason_Cleaned AS Primary_Support_Reason
     INTO #ASCOF_2E_Build
     FROM ASC_Sandbox.InputTable1
     WHERE Service_Type_Cleaned in ('Long Term Support: Nursing Care', 'Long Term Support: Residential Care', 'Long Term Support: Community')
@@ -142,8 +143,8 @@ AS
       AND (Der_Event_End_Date >= @ReportingPeriodStartDate or Der_Event_End_Date is NULL)
       AND (Date_of_Death >= @ReportingPeriodStartDate OR Date_of_Death is NULL)  
       AND (Der_Birth_Month IS NOT NULL and Der_Birth_Year IS NOT NULL)
-      AND Client_Type = 'Service User'
-      AND (@LD_PSR IS NULL OR Primary_Support_Reason = @LD_PSR) -- If @LD_Filter is 1, @LD_PSR is 'Learning Disability Support'. If @LD_Filter is 0, @LD_PSR is NULL, hence NULL=NULL so will just be ignored.
+      AND Client_Type_Cleaned = 'Service User'
+      AND (@LD_PSR IS NULL OR Primary_Support_Reason_Cleaned = @LD_PSR) -- If @LD_Filter is 1, @LD_PSR is 'Learning Disability Support'. If @LD_Filter is 0, @LD_PSR is NULL, hence NULL=NULL so will just be ignored.
 
     ---------------------------------------------------------------------
     ------------------- Pull through latest person details --------------
@@ -207,8 +208,8 @@ AS
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
       b.Event_Type,
-      b.Service_Type_Cleaned,
-      b.Service_Component,
+      b.Service_Type_Cleaned AS Service_Type,
+      b.Service_Component_Cleaned AS Service_Component,
       c.Service_Type_Hierarchy,
       b.Event_Start_Date,
       b.Der_Event_End_Date
@@ -245,7 +246,7 @@ AS
       LA_Code, 
       LA_Name, 
       Der_NHS_LA_Combined_Person_ID, 
-      Service_Type_Cleaned, 
+      Service_Type, 
       Service_Component
     INTO #Service_Row1
     FROM LatestService
@@ -260,7 +261,7 @@ AS
       LA_Code,
       LA_Name, 
       Der_NHS_LA_Combined_Person_ID,
-      Service_Type_Cleaned,
+      Service_Type,
       CASE 
         WHEN COUNT(DISTINCT Service_Component) = 1 --only output service component when the latest is unqiue and in the list below, otherwise null (can't be mapped)
         THEN MAX(CASE WHEN Service_Component IN ('Shared Lives', 'Community supported living', 'Extra care housing') THEN Service_Component ELSE NULL END)
@@ -272,7 +273,7 @@ AS
       LA_Code,
       LA_Name, 
       Der_NHS_LA_Combined_Person_ID,
-      Service_Type_Cleaned;
+      Service_Type;
 
 
     -- Mapping service information to accommodation status for unknown/invalid data
@@ -292,16 +293,16 @@ AS
           LA_Code,
           LA_Name,
           Der_NHS_LA_Combined_Person_ID,
-          Service_Type_Cleaned,
+          Service_Type,
           Service_Component,
           CASE 
-            WHEN Service_Type_Cleaned = 'Long Term Support: Nursing Care' THEN 'Registered nursing home'
-            WHEN Service_Type_Cleaned = 'Long Term Support: Residential Care' THEN 'Registered care home'
+            WHEN Service_Type = 'Long Term Support: Nursing Care' THEN 'Registered nursing home'
+            WHEN Service_Type = 'Long Term Support: Residential Care' THEN 'Registered care home'
             WHEN Service_Component = 'Shared Lives' THEN 'Shared Lives scheme'
             WHEN Service_Component = 'Extra care housing' THEN 'Sheltered housing, extra care housing or other sheltered housing'
             WHEN Service_Component = 'Community supported living' THEN 'Supported accommodation / supported lodgings / supported group home'
-            WHEN Service_Type_Cleaned = 'Long Term Support: Community' THEN 'Unknown - at home'
-            WHEN Service_Type_Cleaned = 'Long Term Support: Prison' THEN 'Prison / Young offenders institution / detention centre'
+            WHEN Service_Type = 'Long Term Support: Community' THEN 'Unknown - at home'
+            WHEN Service_Type = 'Long Term Support: Prison' THEN 'Prison / Young offenders institution / detention centre'
             ELSE 'Unknown'
           END AS Accommodation_Status
           FROM #Unknowns_Services_Deduped )A
@@ -570,12 +571,12 @@ GO
 
 /*
 -----Example execution
-EXEC ASC_Sandbox.Create_ASCOF2E 
-  @ReportingPeriodStartDate = '2023-04-01',
-  @ReportingPeriodEndDate = '2024-03-31', 
+EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards 
+  @ReportingPeriodStartDate = '2024-04-01',
+  @ReportingPeriodEndDate = '2025-03-31', 
   @LD_Filter = 1,  --Toggle on or off
-  @InputTable1 = 'ASC_Sandbox.CLD_230401_240331_SingleSubmissions', 
-  @InputTable2 = 'ASC_Sandbox.CLD_230401_240331_SingleSubmissions_Latest_Person_Data',
+  @InputTable1 = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions', 
+  @InputTable2 = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions_Latest_Person_Data',
   @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_LD',
   @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk'
 */

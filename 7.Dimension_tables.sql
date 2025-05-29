@@ -6,8 +6,8 @@
 
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 
@@ -38,7 +38,10 @@ SELECT
   EOMONTH(Calendar_Date) AS Last_Day_of_Month,
   CASE 
     --If the first week isn't a full week then null
-    WHEN DATEPART(DAY, DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date)) BETWEEN 1 AND 6 AND MONTH(Calendar_Date) = MONTH(@ReportingPeriodStartDate) THEN NULL 
+    WHEN DATEPART(DAY, DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date)) BETWEEN 1 AND 6 --check if date of the next Sunday is between 1st - 6th 
+    AND MONTH(Calendar_Date) = MONTH(@ReportingPeriodStartDate) --check if the month is the same as the first month of the reporting period
+    AND DAY(Calendar_Date) < 8  --and the date is in the first week of the month (to prevent dates at the end of the first month being nulled)
+    THEN NULL 
     --If the last week isn't a full week then null
     WHEN DATEADD(DAY, (8 - DATEPART(WEEKDAY, Calendar_Date)) % 7, Calendar_Date) > @ReportingPeriodEndDate THEN NULL
     --Else output the last day in the week for weekly reporting
@@ -84,7 +87,7 @@ SELECT
 	LA_Name,
 	Region
 INTO ASC_Sandbox.LA_PBI_Geography_Dim
-FROM DHSC_ASC.Reference_ODS_LA;
+FROM ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup;
 
 --Add in information for national
 

@@ -17,8 +17,8 @@
 
 */
 
-DECLARE  @InputTable NVARCHAR(100) = 'ASC_Sandbox.CLD_240101_241231_SingleSubmissions'
-DECLARE  @OutputTable NVARCHAR (100) = 'ASC_Sandbox.CLD_240101_241231_SingleSubmissions_Latest_Person_Data'
+DECLARE  @InputTable NVARCHAR(100) = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions'
+DECLARE  @OutputTable NVARCHAR (100) = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions_Latest_Person_Data'
 
 DECLARE @Query NVARCHAR(MAX)
 DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
@@ -36,25 +36,18 @@ EXEC(@Query)
 -- Create a new variable Der_Accommodation_Known
 DROP TABLE IF EXISTS #Accom_Cleaned
 SELECT
-  *,
+  LA_Code,
+  Der_NHS_LA_Combined_Person_ID,
+  Event_Start_Date,
+  Der_Event_End_Date,
+  COALESCE(Accommodation_Status_Cleaned, 'Unknown')  AS Accommodation_Status, -- R2 to R1 mapping variable
   CASE
-    WHEN Accommodation_Status = 'Unknown'
+    WHEN Accommodation_Status_Cleaned = 'Unknown' OR Accommodation_Status_Cleaned IS NULL
     THEN 0
     ELSE 1
     END AS Der_Accommodation_Known
   INTO #Accom_Cleaned
-  FROM (
-    SELECT 
-      a.LA_Code,
-      a.Der_NHS_LA_Combined_Person_ID,
-      a.Event_Start_Date,
-      a.Der_Event_End_Date,
-      a.Accommodation_Status AS Accommodation_Raw,
-      COALESCE(b.Accommodation_Status_Cleaned_R1, 'Unknown') AS Accommodation_Status -- replaces invalid unmapped values with 'Unknown' (aka needs to be added to mapping table)
-      FROM ASC_Sandbox.InputTable a
-      LEFT JOIN ASC_Sandbox.REF_Accommodation_Status_Mapping b --reference table contains invalid entries mapped to valid ones where possible
-      ON COALESCE (a.Accommodation_Status , 'Unknown') = b.Accommodation_Status_Raw -- replaces input table nulls with 'unknown'
-    ) A
+  FROM ASC_Sandbox.InputTable
 
 -- Identify latest known accommodation status for each person. This is done by:
 -- 1. Sort by der_accommodation known (to favour known over unknown values)

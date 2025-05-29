@@ -13,8 +13,8 @@
 -----------------------------------------------------
 ---- Set reporting period dates -----
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-10-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31'
+DECLARE @ReportingPeriodStartDate AS DATE = '2025-01-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31'
 
 
 -----------------------------------------------------

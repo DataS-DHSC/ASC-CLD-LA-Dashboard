@@ -48,21 +48,23 @@ Clients:
 
 Carers:
 >There are two conditions where delivery mechanism becomes unknown:
-  WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' and 
+  WHEN Service_Type = 'Carer Support: Direct to Carer' and 
        (Delivery_Mechanism not in  ('Direct Payment', 'CASSR Managed Personal Budget', 'CASSR Commissioned support') and 
        Service_Component not like 'Direct Payment') 
-  WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' and 
+  WHEN Service_Type = 'Carer Support: Direct to Carer' and 
        (Delivery_Mechanism is NULL and Service_Component not like 'Direct Payment') 
 >The denominator only includes 'Direct Payment only', 'CASSR Managed Personal Budget', 'CASSR Commissioned Support only'
  therefore unknowns are excluded from the denominator and numerator
 
+ *24/25 onwards - this code has been adapted for use on the 24/25 main tables as these tables contain different field names where R2 to R1 mapping has been applied
+
 */
 
-DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF3D
+DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF3D_2425_Onwards
 
 GO
 
-CREATE PROCEDURE ASC_Sandbox.Create_ASCOF3D
+CREATE PROCEDURE ASC_Sandbox.Create_ASCOF3D_2425_Onwards
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @InputTable AS NVARCHAR(100),
@@ -150,16 +152,20 @@ AS
     DROP TABLE IF EXISTS #ASCOF_3D_Clients_Build;
 
     SELECT
-      *
+      *,
+      Client_Type_Cleaned AS Client_Type,
+      Delivery_Mechanism_Cleaned AS Delivery_Mechanism,
+      Service_Component_Cleaned AS Service_Component,
+      Service_Type_Cleaned AS Service_Type
     INTO #ASCOF_3D_Clients_Build
-    FROM #Build
+    FROM #Build    
     WHERE 
       Service_Type_Cleaned IN 
         ('Long Term Support: Nursing Care', 
         'Long Term Support: Residential Care', 
         'Long Term Support: Community', 
         'Long Term Support: Prison')
-      AND Client_Type = 'Service User'
+      AND Client_Type_Cleaned = 'Service User'
       AND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
       AND (Der_Event_End_Date >= @ReportingPeriodEndDate OR Der_Event_End_Date IS NULL)
       AND (Date_of_Death >= @ReportingPeriodEndDate OR Date_of_Death IS NULL) 
@@ -173,13 +179,13 @@ AS
     UPDATE a
     SET a.Delivery_Mechanism = 
     (CASE
-      WHEN b.Delivery_Mechanism IS NOT NULL AND a.Service_Type_Cleaned in ('Long Term Support: Community', 'Long Term Support: Prison')
+      WHEN b.Delivery_Mechanism IS NOT NULL AND a.Service_Type in ('Long Term Support: Community', 'Long Term Support: Prison')
         THEN a.Delivery_Mechanism 
 	      ELSE '' 
 	    END)
     FROM #ASCOF_3D_Clients_Build a
     LEFT JOIN #REF_Service_Type_Delivery_Mech b
-      ON TRIM (a.Service_Type_Cleaned) = TRIM (b.Service_Type)
+      ON TRIM (a.Service_Type) = TRIM (b.Service_Type)
       AND TRIM (a.Delivery_Mechanism) = TRIM (b.[Delivery_Mechanism]);
 
 
@@ -194,14 +200,14 @@ AS
 
     SELECT
       a.*,
-      CASE WHEN a.Service_Type_Cleaned = 'Long Term Support: Community' AND Service_Component = 'Direct Payment'
+      CASE WHEN a.Service_Type = 'Long Term Support: Community' AND Service_Component = 'Direct Payment'
         THEN '3'
         ELSE b.[Hierarchy]
         END AS [Hierarchy]
     INTO #ASCOF_3D_Clients_Join
     FROM #ASCOF_3D_Clients_Build a
     LEFT JOIN #REF_Service_Type_Delivery_Mech b
-      ON TRIM (a.[Service_type_Cleaned]) = TRIM (b.Service_Type)
+      ON TRIM (a.Service_Type) = TRIM (b.Service_Type)
       AND TRIM (a.Delivery_Mechanism) = TRIM (b.[Delivery_Mechanism])
 
 
@@ -238,7 +244,7 @@ AS
         WHEN b.Der_Age_Reporting_End >= 65 THEN '65 and above'
         ELSE 'Unknown'
       END AS Der_Age_Band_Reporting_End, 
-      a.Service_Type_Cleaned,
+      a.Service_Type,
       a.Service_Component,
       a.[Delivery_Mechanism]
     INTO #ASCOF_3D_Clients_Final
@@ -270,7 +276,7 @@ AS
         END)) AS Numerator
     INTO #ASCOF_3D_Clients_Output
     FROM #ASCOF_3D_Clients_Final
-    WHERE Service_Type_Cleaned = 'Long Term Support: Community' 
+    WHERE Service_Type = 'Long Term Support: Community' 
     GROUP BY
       LA_Code,
       LA_Name,
@@ -290,14 +296,14 @@ AS
           THEN Der_NHS_LA_Combined_Person_ID 
         END)) AS Numerator
     FROM #ASCOF_3D_Clients_Final
-    WHERE Service_Type_Cleaned = 'Long Term Support: Community'
+    WHERE Service_Type = 'Long Term Support: Community'
     GROUP BY
       LA_Code,
       LA_Name,
       ROLLUP(Der_Age_Band_Reporting_End);
 
     --Output invalids and unknowns for the dashboard
-    --This is based on null, unknown or invalid delivery mechanism when Service_Type_Cleaned is community and service component is not direct payment
+    --This is based on null, unknown or invalid delivery mechanism when Service_Type is community and service component is not direct payment
     DROP TABLE IF EXISTS #ASCOF_3D_Clients_Total_UN_IV
     SELECT
       LA_Code,
@@ -306,7 +312,7 @@ AS
     INTO #ASCOF_3D_Clients_Total_UN_IV
     FROM #ASCOF_3D_Clients_Final
     WHERE
-      Service_Type_Cleaned = 'Long Term Support: Community'
+      Service_Type = 'Long Term Support: Community'
       AND (Delivery_Mechanism = '' AND (Service_Component <> 'Direct Payment' OR Service_Component IS NULL))
     GROUP BY
       LA_Code,
@@ -322,20 +328,23 @@ AS
 
     DROP TABLE IF EXISTS #ASCOF_3D_Carers_Build;
 
-    SELECT a.*,
-    COALESCE(eo.Event_Outcome_Cleaned_R1, 'Invalid and not mapped') AS Event_Outcome_Cleaned
+    SELECT
+      *,
+      Client_Type_Cleaned AS Client_Type,
+      Delivery_Mechanism_Cleaned AS Delivery_Mechanism,
+      Service_Component_Cleaned AS Service_Component,
+      Service_Type_Cleaned AS Service_Type,
+      COALESCE(Event_Outcome_Cleaned, 'Invalid and not mapped') AS Event_Outcome 
     INTO #ASCOF_3D_Carers_Build                                                                                                                                                 
     FROM #Build a
-    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo
-    ON a.Event_Outcome_Raw = eo.Event_Outcome_Raw
     WHERE
-      Client_Type in ('Carer','Unpaid carer', 'Carer known by association', 'Unpaid carer known by association')  
+      Client_Type_Cleaned in ('Carer','Unpaid carer', 'Carer known by association', 'Unpaid carer known by association')  
       AND Event_Start_Date <= @ReportingPeriodEndDate  --this line and line below filters to events within the year
       AND (Der_Event_End_Date >= @ReportingPeriodStartDate or Der_Event_End_Date is NULL)
       AND (Date_of_Death >= @ReportingPeriodStartDate OR Date_of_Death is NULL)
       AND Der_Age_Reporting_End >= 18
     --three bespoke combinations of event scenarios below are allowed to make up the Carers cohort
-      AND ((Service_Type_Cleaned IS NULL AND eo.Event_Outcome_Cleaned_R1 = 'NFA - Information & Advice / Signposting only')
+      AND ((Service_Type_Cleaned IS NULL AND Event_Outcome_Cleaned = 'NFA - Information & Advice / Signposting only')
       OR (Service_Type_Cleaned = 'Carer Support: Direct to Carer' OR Service_Type_Cleaned = 'Carer Support: Support involving the person cared-for')
       OR (Event_Type IN ('Assessment','Review') AND Service_Type_Cleaned IS NULL))
 
@@ -348,37 +357,37 @@ AS
     SELECT
       *,
     CASE 
-      WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' AND 
+      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
             (Delivery_Mechanism = 'Direct Payment' or Service_Component = 'Direct Payment') 
       THEN 'Direct Payment only'
 
-      WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' AND 
+      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
             (Delivery_Mechanism = 'CASSR Managed Personal Budget' AND Service_Component NOT LIKE 'Direct Payment') 
       THEN 'CASSR Managed Personal Budget'
 
-      WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' AND 
+      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
             (Delivery_Mechanism = 'CASSR Commissioned support' AND Service_Component NOT LIKE 'Direct Payment') 
       THEN 'CASSR Commissioned Support only'
 
-      WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' AND 
+      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
             (Delivery_Mechanism NOT IN  ('Direct Payment', 'CASSR Managed Personal Budget', 'CASSR Commissioned support') 
             AND Service_Component NOT LIKE 'Direct Payment') 
       THEN 'Support Direct to Carer: Unknown Delivery Mech'
 
-      WHEN Service_Type_Cleaned = 'Carer Support: Direct to Carer' AND 
+      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
             (Delivery_Mechanism is NULL AND Service_Component NOT LIKE 'Direct Payment') 
       THEN 'Support Direct to Carer: Unknown Delivery Mech'
 
-      WHEN Service_Type_Cleaned = 'Carer Support: Support involving the person cared-for' 
+      WHEN Service_Type = 'Carer Support: Support involving the person cared-for' 
       THEN 'No Direct Support Provided to Carer'
 
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome_Cleaned NOT LIKE 'NFA - Information & Advice / Signposting only' 
+      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome NOT LIKE 'NFA - Information & Advice / Signposting only' 
       THEN 'No Direct Support Provided to Carer'
         
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome_Cleaned IS NULL 
+      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome IS NULL 
       THEN 'No Direct Support Provided to Carer'
         
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome_Cleaned = 'NFA - Information & Advice / Signposting only' 
+      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome = 'NFA - Information & Advice / Signposting only' 
       THEN 'Information, Advice and Other Universal Services / Signposting'
         
       WHEN Event_Type = 'Request' 
@@ -596,10 +605,10 @@ GO
 
 -----Example execution
 /*
-EXEC ASC_Sandbox.Create_ASCOF3D
-  @ReportingPeriodStartDate = '2024-01-01',
-  @ReportingPeriodEndDate = '2024-12-31', 
-  @InputTable = 'ASC_Sandbox.CLD_240101_241231_SingleSubmissions', 
+EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards
+  @ReportingPeriodStartDate = '2024-04-01',
+  @ReportingPeriodEndDate = '2025-03-31', 
+  @InputTable = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions', 
   @OutputTable1 = 'ASC_Sandbox.ASCOF_3D',
   @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk'
 */

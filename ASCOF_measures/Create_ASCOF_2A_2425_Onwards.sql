@@ -4,6 +4,8 @@ This code is split into 2 main sections:
 1. Finds reablement services within the year, clusters them, filters to new clients
 2. Identifies the sequels to the reablement epsiodes
 
+24/25 onwards - this code has been adapted for use on the 24/25 main tables as these tables contain different field names where R2 to R1 mapping has been applied
+
 */
 --------------------------------------------------------------------------------------------------------
 -----------------------------SECTION 1 -  Select reablement events -------------------------------------
@@ -17,11 +19,11 @@ This code is split into 2 main sections:
 > Total = 18 months
 */
 
-DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2A
+DROP PROCEDURE IF EXISTS ASC_Sandbox.Create_ASCOF2A_2425_Onwards
 
 GO
 
-CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2A
+CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2A_2425_Onwards
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @InputTable AS NVARCHAR(50),
@@ -46,7 +48,7 @@ AS
         INTO #ASCOF2A_Build_Temp
         FROM ASC_Sandbox.InputTable  
         WHERE 
-          Client_Type = 'Service User'
+          Client_Type_Cleaned = 'Service User'
           AND Der_Working_Age_Band IN ('18 to 64', '65 and above')
           AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
           AND Event_Start_Date IS NOT NULL
@@ -78,31 +80,37 @@ AS
                                            'Progress to Reablement/ST-Max',
                                            'Provision of service',
                                            'Progress to End of Life Care',
+                                           'Release 2 multiple mappings: Progress to assessment, review or reassessment',
+                                           'Release 2 multiple mappings: Continuation of support or services',
                                            'Invalid and not mapped'))
               THEN R.Event_Outcome_Hierarchy + 100
 	        ELSE R.Event_Outcome_Hierarchy
           END AS Event_Outcome_Hierarchy,
-          Event_Outcome_Spec,
-          Event_Outcome_Stripped
+          Event_Outcome_Spec
         INTO #REF_Event_Outcome_Hierarchy_UTC
-        FROM ASC_Sandbox.REF_Event_Outcome_Hierarchy R
+        FROM ASC_Sandbox.REF_Event_Outcome_Hierarchy_R1 R
 
         DROP TABLE IF EXISTS #ASCOF2A_Build
 
         SELECT 
-          a.*,
-          COALESCE(eo.Event_Outcome_Cleaned_R1, 'Invalid and not mapped') as Event_Outcome_Cleaned,
-          COALESCE(eoh.Event_Outcome_Hierarchy, 999) as Event_Outcome_Hierarchy
+          a.LA_Code,
+          a.LA_Name,
+          a.Date_of_Death,
+          a.Client_Type_Cleaned AS Client_Type,
+          a.Event_Type,
+          a.Event_Start_Date,
+          a.Der_Event_End_Date,
+          a.Service_Type_Cleaned AS Service_Type,
+          a.Service_Component_Cleaned AS Service_Component,
+          a.Der_NHS_LA_Combined_Person_ID,
+          a.Der_Working_Age_Band,
+          COALESCE(a.Event_Outcome_Cleaned, 'Invalid and not mapped') as Event_Outcome,
+          COALESCE(eoh.Event_Outcome_Hierarchy, 999) as Event_Outcome_Hierarchy,
+          a.Der_unique_record_id
         INTO #ASCOF2A_Build  
         FROM #ASCOF2A_Build_Temp a
-        LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo
-        ON a.Event_Outcome_Raw = eo.Event_Outcome_Raw
         LEFT JOIN #REF_Event_Outcome_Hierarchy_UTC eoh
-        ON eo.Event_Outcome_Cleaned_R1 = eoh.Event_Outcome_Spec
-
-        --Remove raw field to prevent it being used:
-        ALTER TABLE #ASCOF2A_Build
-        DROP COLUMN Event_Outcome_Raw;
+        ON a.Event_Outcome_Cleaned = eoh.Event_Outcome_Spec
 
         --================== Select ST-Max events ============
 
@@ -113,7 +121,7 @@ AS
         INTO #ST_Max_All
         FROM #ASCOF2A_Build
         WHERE Event_Type = 'Service'
-        AND Service_Type_Cleaned = 'Short Term Support: ST-Max' 
+        AND Service_Type = 'Short Term Support: ST-Max' 
 
 
          --================== Cluster ST-Max events together =====================
@@ -135,9 +143,9 @@ AS
           Der_NHS_LA_Combined_Person_ID,
           Event_Start_Date,
           Der_Event_End_Date,
-          Service_Type_Cleaned,
+          Service_Type,
           Service_Component,
-          Event_Outcome_Cleaned,
+          Event_Outcome,
           Der_unique_record_id,
           Event_Outcome_Hierarchy,
           Der_Working_Age_Band,
@@ -194,16 +202,16 @@ AS
                                                        COALESCE(Event_Outcome_Hierarchy, 999) DESC, 
                                                        Der_unique_record_id ASC 
                                                      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS Cluster_EO_Hierarchy,
-          LAST_VALUE(Event_Outcome_Cleaned) OVER (PARTITION BY  
+          LAST_VALUE(Event_Outcome) OVER (PARTITION BY  
                                                         LA_Code,  
                                                         LA_Name, 
                                                         Der_NHS_LA_Combined_Person_ID, 
                                                         ST_Max_Cluster_ID 
-                                                   ORDER BY  
+                                                    ORDER BY  
                                                         Der_Event_End_Date ASC,  
                                                         COALESCE(Event_Outcome_Hierarchy, 999) DESC, 
                                                         Der_unique_record_id ASC  
-                                                   ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS Cluster_EO,
+                                                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS Cluster_EO,
           LAST_VALUE(Der_Working_Age_Band) OVER (PARTITION BY --LAST_VALUE as Der_working_age_band is derived based on the age at the service event end date. This ensure that we pick up the age band at the end date of the cluster.
                                                         LA_Code, 
                                                         LA_Name,
@@ -268,7 +276,7 @@ AS
 		        WHEN 
               Event_Start_Date BETWEEN ST_Max_Cluster_Start AND ST_Max_Cluster_End  --all start dates will be within the cluster start/end if they were used to form the cluster
 		          AND Event_Type = 'Service'
-		          AND Service_Type_Cleaned = 'Short Term Support: ST-Max'
+		          AND Service_Type = 'Short Term Support: ST-Max'
 		        THEN 1
 		        ELSE 0
 	        END AS Same_ST_Max
@@ -281,35 +289,15 @@ AS
         --2. Set fields to null where ST-Max joins onto itself
         --Can't delete the row as we would lose ST-Max records where their only joined entry is them joining on themselves
         Update #ST_Max_joined SET 
-          Ref_Period_Start_Date = NULL,
-          Ref_Period_End_Date = NULL,
           Client_Type = NULL,
-          Gender_Cleaned = NULL,
-          Ethnicity_Cleaned = NULL,
-          Accommodation_Status = NULL,
-          Employment_Status = NULL,
-          Has_Unpaid_Carer = NULL,
-          Client_Funding_Status = NULL,
-          Primary_Support_Reason = NULL,
           Event_Type = NULL,
           Event_Start_Date = NULL,
           Der_Event_End_Date = NULL,
-          Event_Outcome_Cleaned = NULL,
-          Event_Outcome_Grouped = NULL,
-          Request_Route_of_Access = NULL,
-          Assessment_Type = NULL,
-          Eligible_Needs_Identified = NULL,
-          Method_of_assessment = NULL,
-          Review_Reason = NULL,
-          Review_Type = NULL,
-          Review_Outcomes_Achieved = NULL,
-          Method_of_Review = NULL,
-          Service_Type_Cleaned = NULL,
-          Service_Type_Grouped = NULL,
+          Event_Outcome = NULL,
+          Event_Outcome_Hierarchy = NULL,
+          Service_Type = NULL,
           Service_Component = NULL,
-          Delivery_Mechanism = NULL,
-          Der_Conversation = NULL,
-          Der_Conversation_1 = NULL,
+          Der_Working_Age_Band = NULL,
           Der_Unique_Record_ID = NULL
         WHERE Same_ST_Max = 1
 
@@ -332,10 +320,10 @@ AS
         FROM (
             SELECT *,
               CASE  --New client flag logic: any LTS end date not within 365 days of ST-Max start date
-                WHEN Service_Type_Cleaned IN ('Long Term Support: Nursing Care',
-                                              'Long Term Support: Residential Care',
-                                              'Long Term Support: Community',
-                                              'Long Term Support: Prison')
+                WHEN Service_Type IN ('Long Term Support: Nursing Care',
+                                      'Long Term Support: Residential Care',
+                                      'Long Term Support: Community',
+                                      'Long Term Support: Prison')
 	                   AND Event_Start_Date < ST_Max_Cluster_Start  
                      AND (DATEDIFF(DAY, Der_Event_End_Date, ST_Max_Cluster_Start) <  91 --Alter this to change threshold for new clients  
                      OR Der_Event_End_Date IS NULL)
@@ -474,9 +462,9 @@ AS
           Event_Start_Date AS Sequel_Event_Start_Date,
           Der_Event_End_Date AS Sequel_Event_End_Date,
           Event_Type AS Sequel_Event_Type,
-          Service_Type_Cleaned AS Sequel_Service_Type,
+          Service_Type AS Sequel_Service_Type,
           Service_Component AS Sequel_Service_Component,
-          Event_Outcome_Cleaned AS Sequel_Event_Outcome,
+          Event_Outcome AS Sequel_Event_Outcome,
           DENSE_RANK() OVER (
             PARTITION BY 
               LA_Code, 
@@ -626,7 +614,7 @@ AS
         -- remove rows with no usable outcomes, either in the cluster outcome or in the joined event outcome.
         AND (H.ST_Max_Cluster_Event_Outcome_Hierarchy < 100 OR H.Event_Outcome_Hierarchy < 100) 
         --remove these because, a 'Service ended as planned' outcome on a non-service future event is almost certainly not related an outcome of the STMAX. 
-        AND H.Event_Outcome_Cleaned != 'Service ended as planned' 
+        AND H.Event_Outcome != 'Service ended as planned' 
         --get rid of remaining service sequels (services that didn't get picked up in step 1, mostly (entirely) 'support to carer')
         AND Event_Type != 'Service' ;
 
@@ -738,9 +726,9 @@ AS
            Event_Start_Date AS Sequel_Event_Start_Date,
            Der_Event_End_Date AS Sequel_Event_End_Date,
            Event_Type AS Sequel_Event_Type,
-           Service_Type_Cleaned AS Sequel_Service_Type,
+           Service_Type AS Sequel_Service_Type,
            Service_Component AS Sequel_Service_Component,
-           Event_Outcome_Cleaned AS Sequel_Event_Outcome,
+           Event_Outcome AS Sequel_Event_Outcome,
            DENSE_RANK() OVER (
            PARTITION BY 
              LA_Code, 
@@ -772,7 +760,7 @@ AS
                                                    Der_NHS_LA_Combined_Person_ID, 
                                                    ST_Max_Cluster_ID 
                                                  ORDER BY
-										           Der_Event_End_Date ASC, 
+										                               Der_Event_End_Date ASC, 
                                                    COALESCE(Event_Outcome_Hierarchy, 999) DESC, 
                                                    Der_unique_record_id ASC 
                                                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS Sequel_Cluster_EO
@@ -890,7 +878,8 @@ AS
         DROP TABLE IF EXISTS #OutputTable_Disaggregated
 
         SELECT 
-          FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
+          FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + 
+            FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
           A.LA_Code,
           R.LA_Name,
           ST_Max_Cluster_Working_Age_Band AS Age_Band,
@@ -944,7 +933,9 @@ AS
 						                'Progress to Reablement/ST-Max',
 					                  'Provision of service',
                             'Progress to End of Life Care',
-                            'Invalid and not mapped'
+                            'Invalid and not mapped',
+                            'Release 2 multiple mappings: Progress to assessment, review or reassessment',
+                            'Release 2 multiple mappings: Continuation of support or services'
                              )
               THEN 'Y' ELSE 'N'
             END AS Incl_In_Unable_To_Classify
@@ -981,7 +972,7 @@ AS
         SELECT 'Total'
 
 
-        -- Step 2: Create all LA Ã— Age Band combinations
+        -- Step 2: Create all LA × Age Band combinations
         DROP TABLE IF EXISTS #LA_AgeBand_Cross
 
         SELECT 
@@ -1013,7 +1004,7 @@ AS
           lac.LA_Code,
           lac.LA_Name,
           'ASCOF 2A' AS Measure,
-          'The proportion of people who received short-term services during the year â€“ who previously were not receiving services â€“ where no further request was made for ongoing support (%)' AS [Description],
+          'The proportion of people who received short-term services during the year – who previously were not receiving services – where no further request was made for ongoing support (%)' AS [Description],
           lac.Age_Band AS [Group],
           ISNULL(agg.Numerator, 0) AS Numerator,
           ISNULL(agg.Denominator, 0) AS Denominator,
@@ -1048,10 +1039,10 @@ GO
 
 -----Example execution
 /*
-EXEC ASC_Sandbox.Create_ASCOF2A
-  @ReportingPeriodStartDate = '2023-04-01',
-  @ReportingPeriodEndDate = '2024-03-31',
-  @InputTable = 'ASC_Sandbox.CLD_230401_240630_JoinedSubmissions',
-  @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF2A_Disaggregated_RP1',
-  @OutputTable = 'ASC_Sandbox.ASCOF_2A_RP1'
+EXEC ASC_Sandbox.Create_ASCOF2A_2425_Onwards
+  @ReportingPeriodStartDate = '2024-04-01',
+  @ReportingPeriodEndDate = '2025-03-31',
+  @InputTable = 'ASC_Sandbox.CLD_230401_250331_JoinedSubmissions',
+  @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF2A_Disaggregated',
+  @OutputTable = 'ASC_Sandbox.ASCOF_2A'
 */

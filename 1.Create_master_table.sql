@@ -18,7 +18,7 @@ The pre-processed data table is produced using the create_main_table_for_12mo_pe
 
 --Declare the input table variable
 DECLARE @InputTable AS NVARCHAR(MAX);
-SET @InputTable = 'ASC_Sandbox.CLD_240101_241231_SingleSubmissions';  --Update with the latest single submission data table
+SET @InputTable = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions';  --Update with the latest single submission data table
 
 --Declare a variable to hold the dynamic SQL query
 DECLARE @SQLQuery AS NVARCHAR(MAX);
@@ -28,19 +28,23 @@ SET @SQLQuery = '
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Master_Table
 
 SELECT 
-  a.*,
+  *,
   Gender_Cleaned AS Gender,
   Ethnicity_Cleaned AS Ethnicity,
   Service_Type_Cleaned AS Service_Type,
   Der_Event_End_Date AS Event_End_Date,
-  COALESCE(eo.Event_Outcome_Cleaned, ''Invalid and not mapped'') as Event_Outcome,
-  eoh.Event_Outcome_Hierarchy
+  Event_Outcome_Cleaned AS Event_Outcome,
+  Client_Type_Cleaned AS Client_Type,
+  Primary_Support_Reason_Cleaned AS Primary_Support_Reason,
+  Service_Component_Cleaned AS Service_Component,
+  Delivery_Mechanism_Cleaned AS Delivery_Mechanism,
+  Cost_Frequency_Unit_Type_Cleaned AS Cost_Frequency_Unit_Type,
+  Request_Route_of_Access_Cleaned AS Request_Route_of_Access,
+  Assessment_Type_Cleaned AS Assessment_Type,
+  Review_Reason_Cleaned AS Review_Reason,
+  Review_Outcomes_Achieved_Cleaned as Review_Outcomes_Achieved
 INTO ASC_Sandbox.LA_PBI_Master_Table
-FROM ' + @InputTable + ' a
-LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo  --Clean up the event outcome field
-ON a.Event_Outcome_Raw = eo.Event_Outcome_Raw   
-LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy eoh  --Join on the hierarchy for event outcome
-ON eo.Event_Outcome_Cleaned = eoh.Event_Outcome_Spec';
+FROM ' + @InputTable;
 
 --Execute the dynamic SQL query
 EXEC sp_executesql @SQLQuery;

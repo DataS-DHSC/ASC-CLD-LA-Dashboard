@@ -10,9 +10,9 @@
 --Set the reporting period dates--
 --------------------------------------------------------------------------
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31'
-DECLARE @SubmissionsAsOfDate AS DATE = GETDATE() 
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01'
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31'
+DECLARE @SubmissionsAsOfDate AS DATE = GETDATE()
 
 --------------------------------------------------------------------------
 --Call the procedure which generates the data quality values --

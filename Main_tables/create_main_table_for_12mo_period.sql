@@ -9,15 +9,15 @@
 
 -- Amend reporting period below:
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-01-01';
-DECLARE @ReportingPeriodEndDate AS DATE = '2024-12-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01';
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31';
 
 -- Set "as of" (cut-off) date to select submissions below:
 
 -- Select submissions as of last day of submission window following end of reporting period
 --DECLARE @SubmissionsAsOfDate AS DATE = DATEADD(day, -1, DATEADD(month, 1, DATEADD(day, 1, @ReportingPeriodEndDate)));
 -- Select submission as of manually-specified date, when all LA submissions received and main DQ issues resolved:
-DECLARE @SubmissionsAsOfDate AS DATE = '2025-02-20';
+DECLARE @SubmissionsAsOfDate AS DATE = '2025-05-08';
 
 ---------------------------------------------------------------------------
 
