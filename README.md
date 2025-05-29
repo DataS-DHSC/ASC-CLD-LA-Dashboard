@@ -17,6 +17,10 @@ The main processing steps are:
 * creating cleaned and derived fields, and
 * deduplicating records.
 
+**Release 2 specification**
+
+These scripts process the data as per the Release 1 CLD specification. For 2024/25 onwards, where local authorities have adopted the Release 2 specification early, the data is currently mapped back to Release 1 where possible. This interim approach is necessary until all methods and scripts are fully updated to support the Release 2 specification. No additional data rows are created, instead individual fields are amended as needed.
+
 ## Dashboard tables
 All pages on the dashboard except for ASCOF use the single submissions table covering the latest 12 month reporting period. The codes used to produce the data underpinning the main dashboard pages are numbered and must be ran sequentially. More information on the main table methodology and processing of the data for the dashboard is available in the dashboard methodology document alongside the dashboard on Athena and on [Agem’s website]( https://www.ardengemcsu.nhs.uk/adult-social-care-client-level-data/). 
 
