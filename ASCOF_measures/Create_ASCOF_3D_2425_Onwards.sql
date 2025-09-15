@@ -68,15 +68,20 @@ CREATE PROCEDURE ASC_Sandbox.Create_ASCOF3D_2425_Onwards
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @InputTable AS NVARCHAR(100),
+  @InputTable_PersonDetails AS NVARCHAR(100),
   @OutputTable1 AS NVARCHAR(100),
   @OutputTable2 AS NVARCHAR(100)
 
 AS         
   DECLARE @Query NVARCHAR(MAX)
+
   DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_PersonDetails
+
   SET @Query = N'DROP TABLE IF EXISTS ' + @OutputTable1 + '; 
                 DROP TABLE IF EXISTS ' + @OutputTable2 + '; 
-                CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable + ';'
+                CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable + ';
+				        CREATE SYNONYM ASC_Sandbox.InputTable_PersonDetails FOR ' + @InputTable_PersonDetails +';'
   EXEC(@Query)
 
 
@@ -131,14 +136,18 @@ AS
     DROP TABLE IF EXISTS #Build;
       
     SELECT 
-      *,
+      a.*,
+	    b.Der_Birth_Date AS Der_Birth_Date_Latest,
+	    b.Date_of_Death AS Date_of_Death_Latest,
       CASE
-        WHEN Der_Birth_Year IS NOT NULL
-        THEN FLOOR((DATEDIFF(DAY, CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-01') AS DATE), @ReportingPeriodEndDate)) / 365.25)
-        ELSE NULL
-      END AS Der_Age_Reporting_End
+        WHEN b.Der_Birth_Date IS NULL THEN NULL
+        ELSE FLOOR(DATEDIFF(DAY, b.Der_Birth_Date, @ReportingPeriodEndDate) / 365.25)  
+	    END AS Der_Age_Reporting_End
     INTO #Build
-    FROM ASC_Sandbox.InputTable 
+    FROM ASC_Sandbox.InputTable a
+	  LEFT JOIN ASC_Sandbox.InputTable_PersonDetails b
+      ON a.LA_Code = b.LA_Code
+      AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
 
 
     --------------------------------------------------------------------------------------------------------------
@@ -154,9 +163,19 @@ AS
     SELECT
       *,
       Client_Type_Cleaned AS Client_Type,
-      Delivery_Mechanism_Cleaned AS Delivery_Mechanism,
+      CASE 
+        WHEN Service_Component_Cleaned = 'Direct Payment' THEN 'Direct Payment'  --Overwrite delivery mechanism when service comp is DP
+        ELSE Delivery_Mechanism_Cleaned
+        END
+      AS Delivery_Mechanism,
       Service_Component_Cleaned AS Service_Component,
-      Service_Type_Cleaned AS Service_Type
+      Service_Type_Cleaned AS Service_Type,
+      CASE  
+        WHEN Der_Age_Reporting_End < 18 THEN 'Under 18'
+        WHEN Der_Age_Reporting_End BETWEEN 18 AND 64 THEN '18 to 64'
+        WHEN Der_Age_Reporting_End >= 65 THEN '65 and above'
+        ELSE 'Unknown'
+      END AS Der_Age_Band_Reporting_End
     INTO #ASCOF_3D_Clients_Build
     FROM #Build    
     WHERE 
@@ -167,10 +186,11 @@ AS
         'Long Term Support: Prison')
       AND Client_Type_Cleaned = 'Service User'
       AND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
+      AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
+      AND Event_Start_Date IS NOT NULL
+      AND (Der_Event_End_Date >= Event_Start_Date OR Der_Event_End_Date IS NULL) --removes DQ issues of event end date prior to start dateAND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
       AND (Der_Event_End_Date >= @ReportingPeriodEndDate OR Der_Event_End_Date IS NULL)
-      AND (Date_of_Death >= @ReportingPeriodEndDate OR Date_of_Death IS NULL) 
-      AND (Der_Birth_Month IS NOT NULL AND Der_Birth_Year IS NOT NULL)
-      AND Der_Age_Reporting_End >= 18; 
+      AND (Date_of_Death_Latest >= @ReportingPeriodEndDate OR Date_of_Death_Latest IS NULL) 
 
     
     --Delivery Mechanism is currently NOT a mandatory field and so we can not remove records based on inaccuracy in this field
@@ -238,12 +258,7 @@ AS
       a.LA_Code,
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
-      CASE  
-        WHEN b.Der_Age_Reporting_End < 18 THEN 'Under 18'
-        WHEN b.Der_Age_Reporting_End BETWEEN 18 AND 64 THEN '18 to 64'
-        WHEN b.Der_Age_Reporting_End >= 65 THEN '65 and above'
-        ELSE 'Unknown'
-      END AS Der_Age_Band_Reporting_End, 
+      a.Der_Age_Band_Reporting_End,
       a.Service_Type,
       a.Service_Component,
       a.[Delivery_Mechanism]
@@ -255,12 +270,13 @@ AS
       AND a.[Hierarchy] = b.[Rank]
     WHERE
       b.[Rank] is not NULL
+      AND a.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown')
 
     ------------------------------------------------------
     ---- Create numerators, denominators and unknowns ----
     ------------------------------------------------------
     --Output numerators and denominators
-    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Output;
+    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Aggregation;
       
     SELECT
       LA_Code,
@@ -274,7 +290,7 @@ AS
             OR [Delivery_Mechanism] = 'CASSR Managed Personal Budget'
           THEN Der_NHS_LA_Combined_Person_ID 
         END)) AS Numerator
-    INTO #ASCOF_3D_Clients_Output
+    INTO #ASCOF_3D_Clients_Aggregation
     FROM #ASCOF_3D_Clients_Final
     WHERE Service_Type = 'Long Term Support: Community' 
     GROUP BY
@@ -302,6 +318,15 @@ AS
       LA_Name,
       ROLLUP(Der_Age_Band_Reporting_End);
 
+    -- Remove unknowns from output table (but still included as part of the totals)
+    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Output
+
+    SELECT *
+    INTO #ASCOF_3D_Clients_Output
+    FROM #ASCOF_3D_Clients_Aggregation
+    WHERE [Group] NOT IN ('Unknown')
+
+
     --Output invalids and unknowns for the dashboard
     --This is based on null, unknown or invalid delivery mechanism when Service_Type is community and service component is not direct payment
     DROP TABLE IF EXISTS #ASCOF_3D_Clients_Total_UN_IV
@@ -325,7 +350,6 @@ AS
     ------------------------------------------
     ---- Create cleaned carer build table ----
     ------------------------------------------
-
     DROP TABLE IF EXISTS #ASCOF_3D_Carers_Build;
 
     SELECT
@@ -340,9 +364,11 @@ AS
     WHERE
       Client_Type_Cleaned in ('Carer','Unpaid carer', 'Carer known by association', 'Unpaid carer known by association')  
       AND Event_Start_Date <= @ReportingPeriodEndDate  --this line and line below filters to events within the year
+      AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
+      AND Event_Start_Date IS NOT NULL
       AND (Der_Event_End_Date >= @ReportingPeriodStartDate or Der_Event_End_Date is NULL)
-      AND (Date_of_Death >= @ReportingPeriodStartDate OR Date_of_Death is NULL)
-      AND Der_Age_Reporting_End >= 18
+      AND (Der_Event_End_Date >= Event_Start_Date OR Der_Event_End_Date IS NULL) --removes DQ issues of event end date prior to start dateAND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
+      AND (Date_of_Death_Latest >= @ReportingPeriodStartDate OR Date_of_Death_Latest is NULL)
     --three bespoke combinations of event scenarios below are allowed to make up the Carers cohort
       AND ((Service_Type_Cleaned IS NULL AND Event_Outcome_Cleaned = 'NFA - Information & Advice / Signposting only')
       OR (Service_Type_Cleaned = 'Carer Support: Direct to Carer' OR Service_Type_Cleaned = 'Carer Support: Support involving the person cared-for')
@@ -422,7 +448,12 @@ AS
         LA_Code,
         LA_Name,
         Der_NHS_LA_Combined_Person_ID,
-        MIN(Der_Age_Reporting_End) AS Der_Age_Reporting_End, --To prevent double dounting where DQ issues have multiple DOBs
+        CASE  
+          WHEN MIN(Der_Age_Reporting_End) < 18 THEN 'Under 18'
+          WHEN MIN(Der_Age_Reporting_End) BETWEEN 18 AND 64 THEN '18 to 64'
+          WHEN MIN(Der_Age_Reporting_End) >= 65 THEN '65 and above'
+          ELSE 'Unknown'
+        END AS Der_Age_Band_Reporting_End,
         MIN(Hierarchy) AS [Rank]
       INTO #ASCOF_3D_Carers_MinRank
       FROM #ASCOF_3D_Carers_Join
@@ -439,12 +470,7 @@ AS
       a.LA_Code,
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
-      CASE  
-        WHEN b.Der_Age_Reporting_End < 18 THEN 'Under 18'
-        WHEN b.Der_Age_Reporting_End BETWEEN 18 AND 64 THEN '18 to 64'
-        WHEN b.Der_Age_Reporting_End >= 65 THEN '65 and above'
-        ELSE 'Unknown'
-      END AS Der_Age_Band_Reporting_End, 
+      b.Der_Age_Band_Reporting_End, 
       a.Support_Provided
     INTO #ASCOF_3D_Carers_Final
     FROM #ASCOF_3D_Carers_Join a
@@ -453,13 +479,13 @@ AS
       AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
       AND a.Hierarchy = b.[Rank]
     WHERE b.[Rank] IS NOT NULL
-
+    AND b.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown') --added to remove under 18s but include unknowns (just for totals)
 
     ------------------------------------------------------
     ---- Create numerators, denominators and unknowns ----
     ------------------------------------------------------
     --Output numerators and denominators
-    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Output;
+    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Aggregation;
       
     SELECT
       LA_Code,
@@ -472,7 +498,7 @@ AS
           WHEN Support_Provided IN  ('Direct Payment only', 'CASSR Managed Personal Budget')
           THEN Der_NHS_LA_Combined_Person_ID 
         END)) AS Numerator
-    INTO #ASCOF_3D_Carers_Output
+    INTO #ASCOF_3D_Carers_Aggregation
     FROM #ASCOF_3D_Carers_Final
     WHERE Support_Provided IN  ('Direct Payment only', 'CASSR Managed Personal Budget', 'CASSR Commissioned Support only')
     GROUP BY
@@ -499,6 +525,15 @@ AS
       LA_Code,
       LA_Name,
       ROLLUP(Der_Age_Band_Reporting_End)
+
+
+    -- Remove unknowns from output table (but still included as part of the totals)
+    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Output
+
+    SELECT *
+    INTO #ASCOF_3D_Carers_Output
+    FROM #ASCOF_3D_Carers_Aggregation
+    WHERE [Group] NOT IN ('Unknown')
 
 
     --Output invalids and unknowns for the dashboard
@@ -608,7 +643,9 @@ GO
 EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards
   @ReportingPeriodStartDate = '2024-04-01',
   @ReportingPeriodEndDate = '2025-03-31', 
-  @InputTable = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions', 
+  @InputTable = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions',
+  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions_Latest_Person_Data_2425',
   @OutputTable1 = 'ASC_Sandbox.ASCOF_3D',
   @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk'
 */
+ 

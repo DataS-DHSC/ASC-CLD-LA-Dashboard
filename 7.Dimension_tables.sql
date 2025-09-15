@@ -6,8 +6,8 @@
 
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01'
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2024-07-01' --Update to cover full 12 month reporting period
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-06-30';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 

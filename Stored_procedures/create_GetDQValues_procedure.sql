@@ -41,7 +41,7 @@ AS
     END FieldStatus,
     chk_,
     CASE
-      WHEN chk_ = 1 THEN 'Passed: Valid'
+      WHEN chk_ >= 1 THEN 'Passed: Valid'
       WHEN chk_ = 0 THEN 'Passed: Blank (Not Mandatory)'
       WHEN chk_ = -1 THEN 'Failed: Blank (Mandatory)'
       WHEN chk_ < -1 THEN 'Failed: Invalid'

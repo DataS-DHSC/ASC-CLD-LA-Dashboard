@@ -18,7 +18,7 @@ The pre-processed data table is produced using the create_main_table_for_12mo_pe
 
 --Declare the input table variable
 DECLARE @InputTable AS NVARCHAR(MAX);
-SET @InputTable = 'ASC_Sandbox.CLD_240401_250331_SingleSubmissions';  --Update with the latest single submission data table
+SET @InputTable = 'ASC_Sandbox.CLD_240701_250630_SingleSubmissions';  --Update with the latest single submission data table
 
 --Declare a variable to hold the dynamic SQL query
 DECLARE @SQLQuery AS NVARCHAR(MAX);
