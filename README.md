@@ -26,12 +26,11 @@ All pages on the dashboard except for ASCOF use the single submissions table cov
 
 
 ## ASCOF measures
-Some ASCOF measures require 12 months of data and therefore use the single submissions table, whereas others which require a period longer than 12 months and use the joined submisisons table.
+ASCOF measures tend to require more than 12 months of data (e.g. for identifying new/existing clients and determining sequels) and therefore they all use the joined submisisons table.
 
-The codes for creating the ASCOF measures are set up as stored procedures. This allows figures to be generated for multiple statistical reporting years by altering the reporting period start and end dates and the starting main table. The Latest_Person_Details.sql script creates a table of latest age, gender and accommodation status for all clients. This script must be ran before the 2E stored procedure. The main script (ASCOF_main_script.sql) calls each of ASCOF stored procedures for multiple reporting periods and joins them together for the purpose of the dashboard. 
+The codes for creating the ASCOF measures are set up as stored procedures. This allows figures to be generated for multiple statistical reporting years by altering the reporting period start and end dates and the starting main table. The Latest_Person_Details.sql script creates a table of latest demographic information such as date of birth, gender and accommodation status for all clients. This script is used by all the ASCOF procedures and therefore must be ran in advance. The main script (ASCOF_main_script.sql) calls each of ASCOF stored procedures for multiple reporting periods and joins them together for the purpose of the dashboard. 
 
-The full ASCOF methodolody document is available alongside the dashboard on Athena and on [Agem’s website]( https://www.ardengemcsu.nhs.uk/adult-social-care-client-level-data/). Whilst the methods are near final, certain aspects are under review with the potential for future development, these are highlighted in the methodology document. 
-
+The full ASCOF methodolody document is available alongside the dashboard on Athena and on [Agem’s website]( https://www.ardengemcsu.nhs.uk/adult-social-care-client-level-data/).
 
 
 ## Licence
