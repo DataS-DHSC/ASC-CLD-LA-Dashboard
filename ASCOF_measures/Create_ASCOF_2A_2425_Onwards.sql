@@ -81,23 +81,18 @@ AS
 
         SELECT 
           CASE
-            WHEN (R.Event_Outcome_Spec IN ('No change in package',
-                                           'Progress to Support Planning / Services',
-                                           'Progress to financial assessment',
-                                           'Progress to Re-assessment / Unplanned Review',
-                                           'Progress to Assessment',
-                                           'Progress to Reablement/ST-Max',
-                                           'Provision of service',
-                                           'Progress to End of Life Care',
-                                           'Release 2 multiple mappings: Progress to assessment, review or reassessment',
-                                           'Release 2 multiple mappings: Continuation of support or services',
+            WHEN (R.Event_Outcome_Spec IN ('Continuation of support or services',
+                                           'Progress to support planning or services',
+                                           'Progress to assessment, review or reassessment',
+                                           'Progress to reablement/ST-Max',
+                                           'Release 1 specification only: Not mapped',
                                            'Invalid and not mapped'))
               THEN R.Event_Outcome_Hierarchy + 100
 	        ELSE R.Event_Outcome_Hierarchy
           END AS Event_Outcome_Hierarchy,
           Event_Outcome_Spec
         INTO #REF_Event_Outcome_Hierarchy_UTC
-        FROM ASC_Sandbox.REF_Event_Outcome_Hierarchy_R1 R
+        FROM ASC_Sandbox.REF_Event_Outcome_Hierarchy_R2 R
 
         DROP TABLE IF EXISTS #ASCOF2A_Build
 
@@ -128,7 +123,7 @@ AS
         INTO #ST_Max_All
         FROM #ASCOF2A_Build
         WHERE Event_Type = 'Service'
-        AND Service_Type = 'Short Term Support: ST-Max' 
+        AND Service_Type = 'Short term support: ST-Max' 
 
 
          --================== Cluster ST-Max events together =====================
@@ -277,7 +272,7 @@ AS
 		        WHEN 
               Event_Start_Date BETWEEN ST_Max_Cluster_Start AND ST_Max_Cluster_End  --all start dates will be within the cluster start/end if they were used to form the cluster
 		          AND Event_Type = 'Service'
-		          AND Service_Type = 'Short Term Support: ST-Max'
+		          AND Service_Type = 'Short term support: ST-Max'
 		        THEN 1
 		        ELSE 0
 	        END AS Same_ST_Max
@@ -328,10 +323,10 @@ AS
         FROM (
             SELECT *,
               CASE  --New client flag logic: any LTS end date not within 365 days of ST-Max start date
-                WHEN Service_Type IN ('Long Term Support: Nursing Care',
-                                      'Long Term Support: Residential Care',
-                                      'Long Term Support: Community',
-                                      'Long Term Support: Prison')
+                WHEN Service_Type IN ('Long term support: Nursing care',
+                                      'Long term support: Residential care',
+                                      'Long term support: Community',
+                                      'Long term support: Prison')
 	                   AND Event_Start_Date < ST_Max_Cluster_Start  
                      AND (DATEDIFF(DAY, Der_Event_End_Date, ST_Max_Cluster_Start) <  91 --Alter this to change threshold for new clients  
                      OR Der_Event_End_Date IS NULL)
@@ -347,7 +342,7 @@ AS
                      AND NOT EXISTS (
                         SELECT 1
                         FROM #ST_Max_Joined AS b
-                        WHERE b.Service_Type = 'Short Term Support: ST-Max'
+                        WHERE b.Service_Type = 'Short term support: ST-Max'
                           AND b.ST_Max_Cluster_ID = main.ST_Max_Cluster_ID
                           AND DATEDIFF(DAY, b.Der_Event_End_Date, main.ST_Max_Cluster_Start) BETWEEN 0 AND 27
                           AND main.Der_Event_End_Date <= b.Der_Event_End_Date
@@ -385,13 +380,13 @@ AS
         ,Hierarchy
         )
         VALUES
-        ('Long Term Support: Nursing Care', 1, 1)
-        ,('Long Term Support: Residential Care',  2, 2)
-        ,('Long Term Support: Community',  3, 3)
-        ,('Long Term Support: Prison', 4, 4)
-        ,('Short Term Support: ST-Max', 5, 5)
-        ,('Short Term Support: Ongoing Low Level', 6, 6)
-        ,('Short Term Support: Other Short Term', 7, 7)
+        ('Long term support: Nursing care', 1, 1)
+        ,('Long term support: Residential care',  2, 2)
+        ,('Long term support: Community',  3, 3)
+        ,('Long term support: Prison', 4, 4)
+        ,('Short term support: ST-Max', 5, 5)
+        ,('Short term support: Ongoing low level', 6, 6)
+        ,('Short term support: Other short term', 7, 7)
 
 
         --------------------------------------------------------------------------------------------------------
@@ -434,7 +429,7 @@ AS
           LA_Code,
           Der_NHS_LA_Combined_Person_ID,
           ST_Max_Cluster_ID,
-          'NFA - Deceased' AS 'Final_Outcome',
+          'NFA: Deceased' AS 'Final_Outcome',
           '1' as 'Sequel_Type',
           ST_Max_Cluster_Working_Age_Band
         FROM #ST_MAX_New_Clients_Final
@@ -502,14 +497,14 @@ AS
         -- If the clustering parameter was set to less than 7, or the sequel window changed to greater than 7, then we would expect to find STMAX sequels.
         -- The code here deals with this scenario so that events aren't considered if they start after the start date first STMAX encountered in the sequel window.
 
-        -- Identify the first sequel event of type 'Short Term Support: ST-Max' per cluster
+        -- Identify the first sequel event of type 'Short term support: ST-Max' per cluster
         DROP TABLE IF EXISTS #FirstSTMaxEvent
           SELECT 
             ST_Max_Cluster_ID,
             MIN(RN) AS First_STMax_RN
           INTO #FirstSTMaxEvent
           FROM #RankedEvents
-          WHERE Sequel_Service_Type = 'Short Term Support: ST-Max'
+          WHERE Sequel_Service_Type = 'Short term support: ST-Max'
           GROUP BY ST_Max_Cluster_ID
 
         -- only rows where RN < First_STMax_RN (or no ST-Max found)
@@ -574,7 +569,7 @@ AS
             ORDER BY 
               Service_Hierarchy ASC,  -- lowest hierarchy wins
               CASE 
-                WHEN Sequel_Service_Component IN ('Short Term Residential Care', 'Short Term Nursing Care') THEN 1
+                WHEN Sequel_Service_Component IN ('Short term residential care', 'Short term nursing care') THEN 1
                 ELSE 2
               END  -- residential/nursing preferred within same hierarchy
             ) AS Service_Rank
@@ -593,9 +588,9 @@ AS
           ST_Max_Cluster_Working_Age_Band,
           Sequel_Service_Component AS Top_Service_Component,
           CASE 
-            WHEN Sequel_Service_Type = 'Short Term Support: Other Short Term'
-              AND Sequel_Service_Component IN ('Short Term Residential Care', 'Short Term Nursing Care')
-            THEN 'Short Term Support: Residential or Nursing Care'
+            WHEN Sequel_Service_Type = 'Short term support: Other short term'
+              AND Sequel_Service_Component IN ('Short term residential care', 'Short term nursing care')
+            THEN 'Short term support: Residential or Nursing care' 
             ELSE Sequel_Service_Type
           END AS Final_Outcome
         INTO #Find_Top_Service
@@ -665,7 +660,7 @@ AS
         -- remove rows with no usable outcomes, either in the cluster outcome or in the joined event outcome.
         AND (H.ST_Max_Cluster_Event_Outcome_Hierarchy < 100 OR H.Event_Outcome_Hierarchy < 100) 
         --remove these because, a 'Service ended as planned' outcome on a non-service future event is almost certainly not related an outcome of the STMAX. 
-        AND H.Event_Outcome != 'Service ended as planned' 
+        AND H.Event_Outcome != 'NFA: Support ended as planned' 
         --get rid of remaining service sequels (services that didn't get picked up in step 1, mostly (entirely) 'support to carer')
         AND Event_Type != 'Service' ;
 
@@ -855,7 +850,7 @@ AS
           Der_NHS_LA_Combined_Person_ID,
           ST_Max_Cluster_ID,
           CASE 
-            WHEN Cluster_Min_Event_Outcome_Hierarchy = 999 THEN 'Invalid and not mapped'
+            WHEN Cluster_Min_Event_Outcome_Hierarchy = 999 THEN 'Invalid and not mapped' 
             ELSE Final_Outcome
           END AS 'Final_Outcome',
           CASE
@@ -881,13 +876,13 @@ AS
         --Check if any of the remaining events are services with Service_Component = Equipment
         DROP TABLE IF EXISTS #Nested_Short_Term_Ongoing
 
-        --assign a final outcome of 'Short Term Support: Ongoing Low Level' to the STMAX cluster if there is a nested 'Equipment' service.
+        --assign a final outcome of 'Short term support: Ongoing Low Level' to the STMAX cluster if there is a nested 'Equipment' service.
         SELECT DISTINCT
            LA_Code, 
            LA_Name, 
            Der_NHS_LA_Combined_Person_ID, 
            ST_Max_Cluster_ID,
-           'Short Term Support: Ongoing Low Level' as 'Final_Outcome',
+           'Short term support: Ongoing low level' as 'Final_Outcome',
            ST_Max_Cluster_Working_Age_Band
         INTO #Nested_Short_Term_Ongoing
         FROM #Has_Nested_Events b
@@ -967,49 +962,46 @@ AS
             *,
             CASE 
               WHEN Final_Outcome IN (
-                          'Long Term Support: Community'
-                          ,'Long Term Support: Nursing Care'
-                          ,'Long Term Support: Residential Care'
-                          ,'Long Term Support: Prison'
-                          ,'Short Term Support: Ongoing Low Level'
-                          ,'Short Term Support: Other Short Term'
-                          ,'Short Term Support: Residential or Nursing Care'
-                          ,'NFA - Information & Advice / Signposting only'
-                          ,'Service ended as planned'
-                          ,'NFA - Moved to another LA'
-                          ,'NFA- Other'
-                          ,'NFA - No services offered: Other reason'
-                          ,'NFA - Support ended: Other reason'
+                          'Long term support: Community'
+                          ,'Long term support: Nursing care'
+                          ,'Long term support: Residential care'
+                          ,'Long term support: Prison'
+                          ,'Short term support: Ongoing low level'
+                          ,'Short term support: Other short term'
+                          ,'Short term support: Residential or Nursing care' 
+                          ,'NFA: Information and advice or signposting'
+                          ,'NFA: Support ended as planned'
+                          ,'NFA: Responsibility moved to another local authority'
+                          ,'NFA: Other'
+                          ,'NFA: No services offered for other reason'
+                          ,'NFA: Support ended for other reason'
+                          ,'NFA: Referral to other service within the local authority'
                           )
               THEN 'Y' ELSE 'N'
             END AS Included_In_Denom,
             CASE 
               WHEN Final_Outcome IN (
-                           'Short Term Support: Ongoing Low Level'
-                          ,'Short Term Support: Other Short Term'
-                          ,'NFA - Information & Advice / Signposting only'
-                          ,'Service ended as planned'
-                          ,'NFA - Moved to another LA'
-                          ,'NFA- Other'
-                          ,'NFA - No services offered: Other reason'
-                          ,'NFA - Support ended: Other reason'
+                           'Short term support: Ongoing low level'
+                          ,'Short term support: Other short term'
+                          ,'NFA: Information and advice or signposting'
+                          ,'NFA: Support ended as planned'
+                          ,'NFA: Responsibility moved to another local authority'
+                          ,'NFA: Other'
+                          ,'NFA: No services offered for other reason'
+                          ,'NFA: Support ended for other reason'
+                          ,'NFA: Referral to other service within the local authority'
                           )
               THEN 'Y' ELSE 'N'
             END AS Included_In_Num,
 	          CASE 
               WHEN Final_Outcome IN (
-                            'No change in package',
-						                'Progress to Support Planning / Services',
-						                'Progress to financial assessment',
-						                'Progress to Re-assessment / Unplanned Review',
-						                'Progress to Assessment',
-						                'Progress to Reablement/ST-Max',
-					                  'Provision of service',
-                            'Progress to End of Life Care',
+                            'Continuation of support or services',
+						                'Progress to support planning or services',
+						                'Progress to assessment, review or reassessment',
+						                'Progress to reablement/ST-Max',
                             'Invalid and not mapped',
-                            'Release 2 multiple mappings: Progress to assessment, review or reassessment',
-                            'Release 2 multiple mappings: Continuation of support or services'
-                             )
+                            'Release 1 specification only: Not mapped'
+                            )
               THEN 'Y' ELSE 'N'
             END AS Incl_In_Unable_To_Classify
           FROM #ASCOF2A) A

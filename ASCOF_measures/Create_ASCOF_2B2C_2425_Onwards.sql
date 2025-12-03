@@ -67,8 +67,8 @@ ON
   a.LA_Code = b.LA_Code
 WHERE  
   Event_Type = 'Service' 
-  AND Client_Type_Cleaned = 'Service User' 
-  AND (Service_Type_Cleaned = 'Long Term Support: Residential Care' or Service_Type_Cleaned = 'Long Term Support: Nursing Care') 
+  AND Client_Type_Cleaned = 'Service user' 
+  AND (Service_Type_Cleaned = 'Long term support: Residential care' or Service_Type_Cleaned = 'Long term support: Nursing care') 
   AND (b.Der_Birth_Date IS NOT NULL) 
   AND (b.Date_of_Death >= @ReportingPeriodStartDate OR b.Date_of_Death is NULL)
   AND (Service_Component_Cleaned IS NULL OR Service_Component_Cleaned LIKE '%Residential%' OR Service_Component_Cleaned LIKE '%Nursing%')  --exclude any services which indicate they aren't LT res/nurs
@@ -88,7 +88,7 @@ SELECT DISTINCT
 INTO #Admissions
 FROM ASC_Sandbox.ASCOF_2BC_Build
 WHERE Event_Start_Date BETWEEN @ReportingPeriodStartDate AND  @ReportingPeriodEndDate
-AND (Event_Outcome_Cleaned IS NULL OR Event_Outcome_Cleaned <> 'NFA - Self-funded client (Inc. 12wk disregard)');  
+AND (Event_Outcome_Cleaned IS NULL OR Event_Outcome_Cleaned <> 'NFA: Self-funded client or under 12wk disregard');  
 -- ^ exclude admissions which ended as a person went onto self-fund
 
 

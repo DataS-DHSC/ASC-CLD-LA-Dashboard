@@ -102,15 +102,15 @@ AS
       Delivery_Mechanism,
       Hierarchy)
     VALUES
-      ('Long Term Support: Nursing Care', '', 1),
-      ('Long Term Support: Residential Care', '', 2),
-      ('Long Term Support: Community', 'Direct Payment', 3),
-      ('Long Term Support: Community', 'CASSR Managed Personal Budget', 4),
-      ('Long Term Support: Community', 'CASSR Commissioned Support', 5),
-      ('Long Term Support: Community', '', 6),
-      ('Long Term Support: Prison', 'CASSR Managed Personal Budget', 7),
-      ('Long Term Support: Prison', 'CASSR Commissioned Support', 8),
-      ('Long Term Support: Prison', '', 9);
+      ('Long term support: Nursing care', '', 1),
+      ('Long term support: Residential care', '', 2),
+      ('Long term support: Community', 'Direct payment', 3),
+      ('Long term support: Community', 'CASSR managed personal budget', 4),
+      ('Long term support: Community', 'CASSR commissioned support', 5),
+      ('Long term support: Community', '', 6),
+      ('Long term support: Prison', 'CASSR managed personal budget', 7),
+      ('Long term support: Prison', 'CASSR commissioned support', 8),
+      ('Long term support: Prison', '', 9);
 
 
     --Carer reference table
@@ -164,7 +164,7 @@ AS
       *,
       Client_Type_Cleaned AS Client_Type,
       CASE 
-        WHEN Service_Component_Cleaned = 'Direct Payment' THEN 'Direct Payment'  --Overwrite delivery mechanism when service comp is DP
+        WHEN Service_Component_Cleaned = 'Direct payment' THEN 'Direct payment'  --Overwrite delivery mechanism when service comp is DP
         ELSE Delivery_Mechanism_Cleaned
         END
       AS Delivery_Mechanism,
@@ -180,10 +180,10 @@ AS
     FROM #Build    
     WHERE 
       Service_Type_Cleaned IN 
-        ('Long Term Support: Nursing Care', 
-        'Long Term Support: Residential Care', 
-        'Long Term Support: Community', 
-        'Long Term Support: Prison')
+        ('Long term support: Nursing care', 
+        'Long term support: Residential care', 
+        'Long term support: Community', 
+        'Long term support: Prison')
       AND Client_Type_Cleaned = 'Service User'
       AND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
       AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
@@ -199,7 +199,7 @@ AS
     UPDATE a
     SET a.Delivery_Mechanism = 
     (CASE
-      WHEN b.Delivery_Mechanism IS NOT NULL AND a.Service_Type in ('Long Term Support: Community', 'Long Term Support: Prison')
+      WHEN b.Delivery_Mechanism IS NOT NULL AND a.Service_Type in ('Long term support: Community', 'Long term support: Prison')
         THEN a.Delivery_Mechanism 
 	      ELSE '' 
 	    END)
@@ -220,7 +220,7 @@ AS
 
     SELECT
       a.*,
-      CASE WHEN a.Service_Type = 'Long Term Support: Community' AND Service_Component = 'Direct Payment'
+      CASE WHEN a.Service_Type = 'Long term support: Community' AND Service_Component = 'Direct payment'
         THEN '3'
         ELSE b.[Hierarchy]
         END AS [Hierarchy]
@@ -286,13 +286,13 @@ AS
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
       COUNT(DISTINCT (
         CASE
-          WHEN ([Delivery_Mechanism] = 'Direct Payment' OR [Service_Component] = 'Direct Payment') 
-            OR [Delivery_Mechanism] = 'CASSR Managed Personal Budget'
+          WHEN ([Delivery_Mechanism] = 'Direct payment' OR [Service_Component] = 'Direct payment') 
+            OR [Delivery_Mechanism] = 'CASSR managed personal budget'
           THEN Der_NHS_LA_Combined_Person_ID 
         END)) AS Numerator
     INTO #ASCOF_3D_Clients_Aggregation
     FROM #ASCOF_3D_Clients_Final
-    WHERE Service_Type = 'Long Term Support: Community' 
+    WHERE Service_Type = 'Long term support: Community' 
     GROUP BY
       LA_Code,
       LA_Name,
@@ -308,11 +308,11 @@ AS
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
       COUNT(DISTINCT (
         CASE
-          WHEN ([Delivery_Mechanism] = 'Direct Payment' OR [Service_Component] = 'Direct Payment') 
+          WHEN ([Delivery_Mechanism] = 'Direct payment' OR [Service_Component] = 'Direct payment') 
           THEN Der_NHS_LA_Combined_Person_ID 
         END)) AS Numerator
     FROM #ASCOF_3D_Clients_Final
-    WHERE Service_Type = 'Long Term Support: Community'
+    WHERE Service_Type = 'Long term support: Community'
     GROUP BY
       LA_Code,
       LA_Name,
@@ -337,8 +337,8 @@ AS
     INTO #ASCOF_3D_Clients_Total_UN_IV
     FROM #ASCOF_3D_Clients_Final
     WHERE
-      Service_Type = 'Long Term Support: Community'
-      AND (Delivery_Mechanism = '' AND (Service_Component <> 'Direct Payment' OR Service_Component IS NULL))
+      Service_Type = 'Long term support: Community'
+      AND (Delivery_Mechanism = '' AND (Service_Component <> 'Direct payment' OR Service_Component IS NULL))
     GROUP BY
       LA_Code,
       LA_Name;
@@ -370,8 +370,8 @@ AS
       AND (Der_Event_End_Date >= Event_Start_Date OR Der_Event_End_Date IS NULL) --removes DQ issues of event end date prior to start dateAND Event_Start_Date <= @ReportingPeriodEndDate  --this row and row below filters to services ongoing at the end of the period
       AND (Date_of_Death_Latest >= @ReportingPeriodStartDate OR Date_of_Death_Latest is NULL)
     --three bespoke combinations of event scenarios below are allowed to make up the Carers cohort
-      AND ((Service_Type_Cleaned IS NULL AND Event_Outcome_Cleaned = 'NFA - Information & Advice / Signposting only')
-      OR (Service_Type_Cleaned = 'Carer Support: Direct to Carer' OR Service_Type_Cleaned = 'Carer Support: Support involving the person cared-for')
+      AND ((Service_Type_Cleaned IS NULL AND Event_Outcome_Cleaned = 'NFA: Information and advice or signposting')
+      OR (Service_Type_Cleaned = 'Unpaid carer support: Direct to unpaid carer' OR Service_Type_Cleaned = 'Unpaid carer support: Support involving the person cared-for')
       OR (Event_Type IN ('Assessment','Review') AND Service_Type_Cleaned IS NULL))
 
     ----------------------------------------------------
@@ -383,37 +383,37 @@ AS
     SELECT
       *,
     CASE 
-      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
-            (Delivery_Mechanism = 'Direct Payment' or Service_Component = 'Direct Payment') 
+      WHEN Service_Type = 'Unpaid carer support: Direct to unpaid carer' AND 
+            (Delivery_Mechanism = 'Direct payment' or Service_Component = 'Direct payment') 
       THEN 'Direct Payment only'
 
-      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
-            (Delivery_Mechanism = 'CASSR Managed Personal Budget' AND Service_Component NOT LIKE 'Direct Payment') 
+      WHEN Service_Type = 'Unpaid carer support: Direct to unpaid carer' AND 
+            (Delivery_Mechanism = 'CASSR managed personal budget' AND Service_Component NOT LIKE 'Direct payment') 
       THEN 'CASSR Managed Personal Budget'
 
-      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
-            (Delivery_Mechanism = 'CASSR Commissioned support' AND Service_Component NOT LIKE 'Direct Payment') 
+      WHEN Service_Type = 'Unpaid carer support: Direct to unpaid carer' AND 
+            (Delivery_Mechanism = 'CASSR commissioned support' AND Service_Component NOT LIKE 'Direct payment') 
       THEN 'CASSR Commissioned Support only'
 
-      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
-            (Delivery_Mechanism NOT IN  ('Direct Payment', 'CASSR Managed Personal Budget', 'CASSR Commissioned support') 
-            AND Service_Component NOT LIKE 'Direct Payment') 
+      WHEN Service_Type = 'Unpaid carer support: Direct to unpaid carer' AND 
+            (Delivery_Mechanism NOT IN  ('Direct payment', 'CASSR managed personal budget', 'CASSR commissioned support') 
+            AND Service_Component NOT LIKE 'Direct payment') 
       THEN 'Support Direct to Carer: Unknown Delivery Mech'
 
-      WHEN Service_Type = 'Carer Support: Direct to Carer' AND 
-            (Delivery_Mechanism is NULL AND Service_Component NOT LIKE 'Direct Payment') 
+      WHEN Service_Type = 'Unpaid carer support: Direct to unpaid carer' AND 
+            (Delivery_Mechanism is NULL AND Service_Component NOT LIKE 'Direct payment') 
       THEN 'Support Direct to Carer: Unknown Delivery Mech'
 
-      WHEN Service_Type = 'Carer Support: Support involving the person cared-for' 
+      WHEN Service_Type = 'Unpaid carer support: Support involving the person cared-for' 
       THEN 'No Direct Support Provided to Carer'
 
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome NOT LIKE 'NFA - Information & Advice / Signposting only' 
+      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome NOT LIKE 'NFA: Information and advice or signposting' 
       THEN 'No Direct Support Provided to Carer'
         
       WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome IS NULL 
       THEN 'No Direct Support Provided to Carer'
         
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome = 'NFA - Information & Advice / Signposting only' 
+      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome = 'NFA: Information and advice or signposting' 
       THEN 'Information, Advice and Other Universal Services / Signposting'
         
       WHEN Event_Type = 'Request' 

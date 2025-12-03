@@ -73,27 +73,27 @@ AS
       Accommodation_Sort_Order)
     VALUES
       ('Owner occupier or shared ownership scheme',1,1),
-      ('Tenant',1,2),
-      ('Tenant - private landlord',1,3),
-      ('Settled mainstream housing with family / friends',1,4),
-      ('Supported accommodation / supported lodgings / supported group home',1,5),
+      ('Tenant: Local authority or other social housing provider',1,2),
+      ('Tenant: Private landlord',1,3),
+      ('Settled mainstream housing with family or friends',1,4),
+      ('Supported accommodation, supported lodgings or supported group home',1,5),
       ('Shared Lives scheme',1,6),
       ('Approved premises for offenders released from prison or under probation supervision',1,7),
-      ('Sheltered housing / extra care housing / other sheltered housing',1,8),
-      ('Mobile accommodation for Gypsy / Roma and Traveller communities',1,9),
-      ('Unknown - presumed at home', 1,10),  --additional category derived from service information
-      ('Rough sleeper / squatting',0,11),
-      ('Night shelter / emergency hostel / direct access hostel',0,12),
+      ('Sheltered housing, extra care housing or other sheltered housing',1,8),
+      ('Mobile accommodation for Gypsy, Roma and Traveller communities',1,9),
+      ('Unknown: presumed at home', 1,10),  --additional category derived from service information
+      ('Rough sleeper or squatting',0,11),
+      ('Night shelter, emergency hostel or direct access hostel',0,12),
       ('Refuge',0,13),
       ('Placed in temporary accommodation by the council (inc. homelessness resettlement)',0,14),
-      ('Staying with family / friends as a short-term guest',0,15),
-      ('Acute / long-term healthcare residential facility or hospital',0,16),
+      ('Staying with family or friends as a short term guest',0,15),
+      ('Acute hospital or long term healthcare residential facility',0,16),
       ('Registered care home',0,17),
       ('Registered nursing home',0,18),
-      ('Prison / Young offenders institution / detention centre',0,19),
+      ('Prison, young offenders institution or detention centre',0,19),
       ('Other temporary accommodation',0,20),
       ('Unknown', 0,21),
-      ('Unknown - presumed in community',0,22) --additional category derived from service information
+      ('Unknown: presumed in community',0,22) --additional category derived from service information
 
     -----------------------------------------------------------------------------------
     ------------------------------ Create variables  ----------------------------------
@@ -139,9 +139,9 @@ AS
       Der_Event_End_Date
     INTO #ASCOF_2E_Build
     FROM ASC_Sandbox.InputTable
-    WHERE Client_Type_Cleaned IN ('Service User')--changed
+    WHERE Client_Type_Cleaned IN ('Service user')--changed
       AND Event_Type = 'Service'
-      AND Service_Type_Cleaned in ('Long Term Support: Nursing Care', 'Long Term Support: Residential Care', 'Long Term Support: Community', 'Long Term Support: Prison')
+      AND Service_Type_Cleaned in ('Long term support: Nursing care', 'Long term support: Residential care', 'Long term support: Community', 'Long term support: Prison')
       AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
       AND Event_Start_Date IS NOT NULL
       AND (Der_Event_End_Date >= Event_Start_Date OR Der_Event_End_Date IS NULL) --removes DQ issues of event end date prior to start date
@@ -280,7 +280,7 @@ AS
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator 
     INTO #Denominator
     FROM #ASCOF_2E_Final
-    WHERE Person_Working_Age_Band <> 'unknown'
+    WHERE Person_Working_Age_Band <> 'Unknown' 
     GROUP BY 
       LA_Code, 
       LA_Name,
@@ -425,7 +425,7 @@ AS
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS [Count]
     INTO #Final_Unknowns
     FROM #ASCOF_2E_Final
-    WHERE (Accommodation_Status = 'Unknown' OR Accommodation_Status = 'Unknown - presumed at home' OR Accommodation_Status = 'Unknown - presumed in community'
+    WHERE (Accommodation_Status = 'Unknown' OR Accommodation_Status = 'Unknown: presumed at home' OR Accommodation_Status = 'Unknown: presumed in community'
       OR  Accommodation_Status NOT IN  
         (SELECT Accommodation_Status
           FROM #REF_Accommodation_Status)
