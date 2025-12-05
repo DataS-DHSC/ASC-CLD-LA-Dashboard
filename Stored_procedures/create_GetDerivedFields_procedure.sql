@@ -5,12 +5,13 @@
 
 -- - Cleans up gender, ethnicity, service type and event outcome fields
 -- - Creates higher level groupings for ethnicity, service type, event
---   outcome and review reason
+--   outcome and review reason (updated for 25/26 Q2 main tables)
 -- - Derives event outcome hierarchy
 -- - Derives latest age, age band and working age band
 -- - Creates a new person ID field: traced NHS number if present, else
 --   LA-provided NHS number, else LA person ID (row excluded if none present)
 -- - Derives a unique event reference (DHSC definition of a "unique" event)
+-- - Maps all data to release 2 specification
 --
 -- Note:
 -- - Input table must contain derived event end date - Der_Event_End_Date
@@ -25,7 +26,7 @@
 DROP PROCEDURE IF EXISTS ASC_Sandbox.GetDerivedFields
 GO
 
-CREATE PROCEDURE ASC_Sandbox.GetDerivedFields_dev_eoh
+CREATE PROCEDURE ASC_Sandbox.GetDerivedFields
   @InputTable SYSNAME = NULL,
   @OutputTable AS NVARCHAR(50)
 AS
@@ -70,23 +71,27 @@ AS
       Gender AS Gender_Raw,
       Gender_Cleaned,
       Ethnicity AS Ethnicity_Raw,
-      Ethnicity_Cleaned_R1 as Ethnicity_Cleaned,
+      Ethnicity_Cleaned_R2 as Ethnicity_Cleaned,
       Event_Outcome AS Event_Outcome_Raw,
-      Event_Outcome_Cleaned_R1 as Event_Outcome_Cleaned,
+      Event_Outcome_Cleaned_R2 as Event_Outcome_Cleaned,
       Event_Outcome_Hierarchy,
       Service_Type AS Service_Type_Raw,
-      Service_Type_Cleaned_R1 as Service_Type_Cleaned,
+      Service_Type_Cleaned_R2 as Service_Type_Cleaned,
+	  Review_Reason as Review_Reason_Raw,
+	  Review_Reason_Cleaned_R2 as Review_Reason_Cleaned,
 
       -- Derive high level categories
-      Ethnicity_Grouped_R1 as Ethnicity_Grouped,
-      Event_Outcome_Grouped_R1 as Event_Outcome_Grouped,
-      Service_Type_Grouped_R1 as Service_Type_Grouped,
+      Ethnicity_Grouped_R2 as Ethnicity_Grouped,
+      Event_Outcome_Grouped_R2 as Event_Outcome_Grouped,
+      Service_Type_Grouped_R2 as Service_Type_Grouped,
 
       -- Derive review type field
-      CASE
-        WHEN Review_Reason LIKE '%unplanned%' AND Event_Type = 'Review' THEN 'Unplanned'
-        WHEN Review_Reason LIKE 'planned%' AND Event_Type = 'Review' THEN 'Planned'
-        WHEN (Review_Reason IS NULL OR Review_Reason = '') AND Event_Type = 'Review' THEN NULL
+	  CASE
+        WHEN Review_Reason_Cleaned_R2 LIKE '%unplanned%' AND Event_Type = 'Review' THEN 'Unplanned'
+        WHEN Review_Reason_Cleaned_R2 LIKE 'planned%' AND Event_Type = 'Review' THEN 'Planned review of long term support' -- Category name updated for clarity
+		WHEN Review_Reason_Cleaned_R2 = 'Review of short term support' AND Event_Type = 'Review' THEN 'Review of short term support' -- new category added
+		WHEN Review_Reason_Cleaned_R2 = 'Invalid and not mapped' and Event_Type = 'Review' THEN 'Review Type Unknown' -- new to deal with addition from cleaning
+        WHEN (Review_Reason_Cleaned_R2 IS NULL OR Review_Reason_Cleaned_R2 = '') AND Event_Type = 'Review' THEN NULL
         WHEN Event_Type NOT LIKE '%Review%' THEN NULL
         ELSE 'Review Type Unknown'
       END AS Review_Type,
@@ -108,13 +113,15 @@ AS
     ON a.Service_Type = st.Service_Type_Raw
     LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo
     ON a.Event_Outcome = eo.Event_Outcome_Raw
-    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy_R1 eoh
-    ON eo.Event_Outcome_Cleaned_R1 = eoh.Event_Outcome_Spec
+    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy_R2 eoh
+    ON eo.Event_Outcome_Cleaned_R2 = eoh.Event_Outcome_Spec
+	LEFT JOIN ASC_Sandbox.REF_Review_Reason_Mapping as rr
+	on a.Review_Reason = rr.Review_Reason_Raw
   ) b
 
   -- Drop original Gender, Ethnicity, Service_Type and Event_Outcome fields to highlight "_Raw" / "_Cleaned" fields
   ALTER TABLE #Temp
-  DROP COLUMN Gender, Ethnicity, Service_Type, Event_Outcome ;
+  DROP COLUMN Gender, Ethnicity, Service_Type, Event_Outcome, Review_Reason ;
 
   ---------------------------------------------------------------------------
   -- Close services with missing or incorrect end dates (before deriving ages)
@@ -122,7 +129,7 @@ AS
   -- Services that appear to be ongoing at the end of a reference period should be found in the next period.
   -- If not found we assume the event end date is erroneously missing or incorrect and populate it with the
   -- reference period end date. Note this applies only to open services associated with reference periods
-  -- where another reference period follows – i.e. open services associated with the last reference period
+  -- where another reference period follows â€“ i.e. open services associated with the last reference period
   -- remain open.
 
   -- Identify ref periods for each LA
@@ -225,56 +232,52 @@ AS
     select 
         d.*,
 		Client_Funding_Status as Client_Funding_Status_Raw,
-		Client_Funding_Status_Cleaned_R1 as Client_Funding_Status_Cleaned,
+		Client_Funding_Status_Cleaned_R2 as Client_Funding_Status_Cleaned,
 
 		Client_Type as Client_Type_Raw,
-		Client_Type_Cleaned_R1 as Client_Type_Cleaned,
+		Client_Type_Cleaned_R2 as Client_Type_Cleaned,
 
 		Delivery_Mechanism as Delivery_Mechanism_Raw,
-		Delivery_Mechanism_Cleaned_R1 as Delivery_Mechanism_Cleaned,
+		Delivery_Mechanism_Cleaned_R2 as Delivery_Mechanism_Cleaned,
 
 		Assessment_Type as Assessment_Type_Raw,
-		Assessment_Type_Cleaned_R1 as Assessment_Type_Cleaned,
+		Assessment_Type_Cleaned_R2 as Assessment_Type_Cleaned,
 
 		Hearing_Impairment as Hearing_Impairment_Raw,
-		Hearing_Impairment_Cleaned_R1 as Hearing_Impairment_Cleaned,
+		Hearing_Impairment_Cleaned_R2 as Hearing_Impairment_Cleaned,
 
 		Method_Of_Assessment as Method_Of_Assessment_Raw,
-		Method_Of_Assessment_Cleaned_R1 as Method_of_Assessment_Cleaned,
+		Method_Of_Assessment_Cleaned_R2 as Method_of_Assessment_Cleaned,
 
 		Method_Of_Review as Method_Of_Review_Raw,
-		Method_Of_Review_Cleaned_R1 as Method_of_Review_Cleaned,
+		Method_Of_Review_Cleaned_R2 as Method_of_Review_Cleaned,
 
 		Primary_Support_Reason as Primary_Support_Reason_Raw,
-		Primary_Support_Reason_Cleaned_R1 as Primary_Support_Reason_Cleaned,
+		Primary_Support_Reason_Cleaned_R2 as Primary_Support_Reason_Cleaned,
 
 		Request_Route_Of_Access as Request_Route_Of_Access_Raw,
-		Request_Route_Of_Access_Cleaned_R1 as Request_Route_Of_Access_Cleaned,
+		Request_Route_Of_Access_Cleaned_R2 as Request_Route_Of_Access_Cleaned,
 
 		Review_Outcomes_Achieved as Review_Outcomes_Achieved_Raw,
-		Review_Outcomes_Achieved_Cleaned_R1 as Review_Outcomes_Achieved_Cleaned,
-
-		Review_Reason as Review_Reason_Raw,
-		Review_Reason_Cleaned_R1 as Review_Reason_Cleaned,
+		Review_Outcomes_Achieved_Cleaned_R2 as Review_Outcomes_Achieved_Cleaned,
 
 		Accommodation_Status as Accommodation_Status_Raw,
-		Accommodation_Status_Cleaned_R1 as Accommodation_Status_Cleaned,
+		Accommodation_Status_Cleaned_R2 as Accommodation_Status_Cleaned,
 
 		Cost_Frequency_Unit_Type as Cost_Frequency_Unit_Type_Raw,
-		Cost_Frequency_Unit_Type_Cleaned_R1 as Cost_Frequency_Unit_Type_Cleaned,
+		Cost_Frequency_Unit_Type_Cleaned_R2 as Cost_Frequency_Unit_Type_Cleaned,
 
 		Employment_Status as Employment_Status_Raw,
-		Employment_Status_Cleaned_R1 as Employment_Status_Cleaned,
+		Employment_Status_Cleaned_R2 as Employment_Status_Cleaned,
 
 		Service_Component as Service_Component_Raw,
-		Service_Component_Cleaned_R1 as Service_Component_Cleaned,
+		Service_Component_Cleaned_R2 as Service_Component_Cleaned,
 
 		Total_Hrs_Caring_Per_Week as Total_Hrs_Caring_Per_Week_Raw,
-		Total_Hrs_Caring_Per_Week_Cleaned_R1 as Total_Hrs_Caring_Per_Week_Cleaned,
-		Total_Hrs_Caring_Per_Week_Cleaned_R2, -- Included due to discontinuity in R2 to R1 mapping
+		Total_Hrs_Caring_Per_Week_Cleaned_R2 as Total_Hrs_Caring_Per_Week_Cleaned,
 
 		Visual_Impairment as Visual_Impairment_Raw,
-		Visual_Impairment_Cleaned_R1 as Visual_Impairment_Cleaned
+		Visual_Impairment_Cleaned_R2 as Visual_Impairment_Cleaned
 
 
     into #OutputTable
@@ -300,8 +303,6 @@ AS
         on d.Request_Route_Of_Access = rra.Request_Route_Of_Access_Raw left join
         ASC_Sandbox.REF_Review_Outcomes_Achieved_Mapping as roa
         on d.Review_Outcomes_Achieved = roa.Review_Outcomes_Achieved_Raw left join
-        ASC_Sandbox.REF_Review_Reason_Mapping as rr
-        on d.Review_Reason = rr.Review_Reason_Raw left join
         ASC_Sandbox.REF_Accommodation_Status_Mapping as accom 
         on d.Accommodation_Status = accom.Accommodation_Status_Raw left join
         ASC_Sandbox.REF_Cost_Frequency_Mapping as cf
@@ -318,7 +319,7 @@ AS
 
     -- Drop original [variable] to highlight copy named [variable]_raw and cleaned version [varaible]_cleaned 
     alter table #OutputTable
-    drop column Client_Funding_Status, Client_Type, Delivery_Mechanism, Assessment_Type, Method_Of_Assessment, Method_Of_Review, Primary_Support_Reason, Request_Route_Of_Access, Review_Outcomes_Achieved, Review_Reason, Accommodation_Status, Cost_Frequency_Unit_Type, Employment_Status, Service_Component, Total_Hrs_Caring_Per_Week, Visual_Impairment
+    drop column Client_Funding_Status, Client_Type, Delivery_Mechanism, Assessment_Type, Method_Of_Assessment, Method_Of_Review, Primary_Support_Reason, Request_Route_Of_Access, Review_Outcomes_Achieved, Accommodation_Status, Cost_Frequency_Unit_Type, Employment_Status, Service_Component, Total_Hrs_Caring_Per_Week, Visual_Impairment
 
   SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable'
 

@@ -154,10 +154,9 @@ AS
     Assessment_Type_Cleaned,
     Eligible_Needs_Identified,
     Method_of_Assessment_Raw,
-    Method_of_Assessment_Cleaned
+    Method_of_Assessment_Cleaned,
     Total_Hrs_Caring_per_week_Raw,
     Total_Hrs_Caring_per_week_Cleaned,
-    Total_Hrs_Caring_per_week_Cleaned_R2,
     No_of_adults_being_cared_for,
     Adult_1_Linked_Person_ID,
     Adult_2_Linked_Person_ID,
