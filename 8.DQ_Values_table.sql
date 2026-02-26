@@ -10,9 +10,9 @@
 --Set the reporting period dates--
 --------------------------------------------------------------------------
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-07-01'  --Update to cover full 12 month reporting period
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-06-30'
-DECLARE @SubmissionsAsOfDate AS DATE = '2025-08-06' -- The date the single submission table was produced
+DECLARE @ReportingPeriodStartDate AS DATE = '2025-01-01'  --Update to cover full 12 month reporting period
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-12-31'
+DECLARE @SubmissionsAsOfDate AS DATE = '2026-02-12' -- The date the single submission table was produced
 
 --------------------------------------------------------------------------
 --Call the procedure which generates the data quality values --

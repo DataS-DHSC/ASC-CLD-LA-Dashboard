@@ -1,111 +1,196 @@
 --Main script for running each ASCOF measure and joining outputs together
 
---The reporting period start and end dates determine the statistical reporting year
+--The reporting period start and end dates determine the statistical reporting year figures are calculated for
 --The input table selected dertermines the period the data covers for analysis, as some measures required an extended period beyond the reporting year
 --Some measures have multiple output tables, where additional information is stored (excluded counts, disaggregated outcomes etc)
 
 /*
 The main input tables prior to October 2025 have had any release 2 data mapped back to release 1.
-From OCtober 2025 onwards any release 1 data is mapped forwards to release 2
+From October 2025 onwards any release 1 data is mapped forwards to release 2.
 This is required as we transition from one specification to the other.
 
-***Update for October 25 submissions
-The figures for all reporting periods prior to Q1 July 24 - June 25 have been revised using the data from the July subsmissions. 
-From October 2025 onwards, ASCOF figures for the latest reporting period only will be provided, except 2D which lags by 3 months.
-The previous reporting periods figures are now fixed.
+From January 2026 onwards, ASCOF figures for the latest reporting period are provided and those for the latest prior period are revised. 
+E.g. In January 2026 figures are produced for Jan 25 - Dec 25 and figures for Oct 24 - Sept 25 are revised. 
+ASCOF 2D follows the same approach but has a 3 month lag on the reporting periods.
 
--------UPDATED SCRIPT---------- 
-This script is an update for ASCOF R2 - from the next reporting period, new data will get added onto existing tables rather than redoing all the figures for previous periods (as described above). 
 */
 
-
---======= Create latest person details table ======
-EXEC ASC_Sandbox.Create_person_details_table
-  @ReportingPeriodStartDate = '2024-10-01',
-  @ReportingPeriodEndDate = '2025-09-30',
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions', --use joined submissions table
-  @OutputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data'
-
-
---================== ASCOF 2A =====================
---Latest reporting year
-EXEC ASC_Sandbox.Create_ASCOF2A_2425_Onwards 
-  @ReportingPeriodStartDate = '2024-10-01', 
-  @ReportingPeriodEndDate = '2025-09-30',  
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF_2A_Disaggregated_Latest',
-  @OutputTable = 'ASC_Sandbox.ASCOF_2A_Latest'
-
-
---================== ASCOF 2B & 2C =====================
---Latest reporting year
-EXEC ASC_Sandbox.Create_ASCOF2BC_2425_Onwards --method is the same adapted for input table with R2 to R1 spec mapping applied
-  @ReportingPeriodStartDate = '2024-10-01', 
-  @ReportingPeriodEndDate = '2025-09-30',  
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @OutputTable = 'ASC_Sandbox.ASCOF_2BC_Latest'
-
-
---================== ASCOF 2E =====================
-
-----Latest reporting year----
-
-  --Part 1: LD Cohort
-EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards  --method is the same adapted for input table with R2 to R1 spec mapping applied
-  @ReportingPeriodStartDate = '2024-10-01',
-  @ReportingPeriodEndDate = '2025-09-30', 
-  @LD_Filter = 1,
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions', 
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_LD_Latest',
-  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk_Latest'
-
---Part 2: All PSR
-EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards  --method is the same adapted for input table with R2 to R1 spec mapping applied
-  @ReportingPeriodStartDate = '2024-10-01',
-  @ReportingPeriodEndDate = '2025-09-30', 
-  @LD_Filter = 0,
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions', 
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_All_Latest',
-  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_All_Unk_Latest'
-
---================== ASCOF 3D =====================
-----Latest reporting year----
-
-EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards --method is the same adapted for input table with R2 to R1 spec mapping applied
-  @ReportingPeriodStartDate = '2024-10-01',
-  @ReportingPeriodEndDate = '2025-09-30', 
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @OutputTable1 = 'ASC_Sandbox.ASCOF_3D_Latest',
-  @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk_Latest'
-
-
---================== ASCOF 2D ====================
---To ensure the figures are reproducible a static cut of SUS data is required (as it updates daily). 
---Uncomment this code block if you wish to refresh the SUS base data, otherwise skip this step. Remember to edit 
---the date prefix on the table name to reflect the date of the refresh
+-- =====================================================
+-- Create latest person details table
+-- ===================================================== 
+--NB this is currently run in this ASCOF script but will move to main table processing
+--Comment out only when producing the new table for the latest period
 
 /*
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_SUS_251125;  --update date
-SELECT *
-INTO ASC_Sandbox.ASCOF2D_SUS_251125  --update date
+EXEC ASC_Sandbox.Create_person_details_table
+  @ReportingPeriodStartDate = '2025-01-01',  --<<<<<<<<<< UPDATE
+  @ReportingPeriodEndDate = '2025-12-31',    --<<<<<<<<<< UPDATE
+  @InputTable = 'ASC_Sandbox.CLD_230401_251231_JoinedSubmissions', --use joined submissions table   --<<<<<<<<<< UPDATE
+  @OutputTable = 'ASC_Sandbox.CLD_230401_251231_JoinedSubmissions_Latest_Person_Data'               --<<<<<<<<<< UPDATE
+  */
+
+
+-- =====================================================
+-- Create cut of SUS data in order to reproduce figures
+-- ===================================================== 
+--To ensure the figures are reproducible a static cut of SUS data is required (as it updates daily). 
+--Uncomment this code block if you wish to refresh the SUS base data, otherwise skip this step. 
+--Update the date suffix with the date of the refresh
+
+/*
+SELECT DISTINCT
+  Der_DHSC_Pseudo_NHS_Number, --only retain required fields
+  APCS_Ident,
+  APCS_Last_Ep_Ind,
+  Admission_Date,
+  Discharge_Date,
+  Month_of_Birth_SUS,
+  Year_of_Birth_SUS,
+  Sex,
+  Der_Postcode_LSOA_2011_Code,
+  Admission_Method,
+  Discharge_Method,
+  Discharge_Destination,
+  Der_Management_Type,
+  Treatment_Function_Code
+INTO ASC_Sandbox.ASCOF2D_SUS_260216   --<<<<<<<<<< UPDATE
 FROM DHSC_SUS.APCE
 WHERE Discharge_Date BETWEEN '2023-04-01' AND CAST(GETDATE() AS DATE);
 */
 
+  
+-- =====================================================
+-- Set global parameters for producing ASCOF
+-- ===================================================== 
+--Latest statistical reporting period
+DECLARE @LatestStartDate DATE = '2025-01-01';    --<<<<<<<<<< UPDATE
+DECLARE @LatestEndDate   DATE = '2025-12-31';    --<<<<<<<<<< UPDATE
+DECLARE @InputTable SYSNAME = CONCAT('ASC_Sandbox.CLD_230401_', CONVERT(char(6), @LatestEndDate, 12), '_JoinedSubmissions');
+DECLARE @PersonDetailsTable SYSNAME = CONCAT(@InputTable, '_Latest_Person_Data')
+
+-- Previous statistical reporting period
+DECLARE @PreviousStartDate DATE = DATEADD(MONTH, -3, @LatestStartDate);
+DECLARE @PreviousEndDate   DATE = EOMONTH(DATEADD(MONTH, -3, @LatestEndDate));
+
+--ASCOF 2D specific reporting periods (additional 3 month lag to determine outcomes)
+DECLARE @2D_LatestStartDate DATE = @PreviousStartDate
+DECLARE @2D_LatestEndDate DATE = @PreviousEndDate
+DECLARE @2D_PreviousStartDate DATE = DATEADD(MONTH, -3, @PreviousStartDate)
+DECLARE @2D_PreviousEndDate DATE = DATEADD(MONTH, -3, @PreviousEndDate)
+DECLARE @SUS_InputData SYSNAME = 'ASC_Sandbox.ASCOF2D_SUS_260216'   --<<<<<<<<<< UPDATE
+
+-- ============================================================
+-- Output latest figures and revise one previous set of figures
+-- ============================================================
+
+--================== ASCOF 2A =====================
+--Latest statistical reporting period
+EXEC ASC_Sandbox.Create_ASCOF2A_2425_Onwards 
+  @ReportingPeriodStartDate = @LatestStartDate, 
+  @ReportingPeriodEndDate = @LatestEndDate,  
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF_2A_Disaggregated_Latest',
+  @OutputTable = 'ASC_Sandbox.ASCOF_2A_Latest'
+
+--Previous reporting year
+EXEC ASC_Sandbox.Create_ASCOF2A_2425_Onwards 
+  @ReportingPeriodStartDate = @PreviousStartDate, 
+  @ReportingPeriodEndDate = @PreviousEndDate,  
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF_2A_Disaggregated_Previous',
+  @OutputTable = 'ASC_Sandbox.ASCOF_2A_Previous'
+
+--================== ASCOF 2B & 2C =====================
+--Latest statistical reporting period
+EXEC ASC_Sandbox.Create_ASCOF2BC_2425_Onwards 
+  @ReportingPeriodStartDate = @LatestStartDate, 
+  @ReportingPeriodEndDate = @LatestEndDate,  
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable = 'ASC_Sandbox.ASCOF_2BC_Latest'
+  
+EXEC ASC_Sandbox.Create_ASCOF2BC_2425_Onwards 
+  @ReportingPeriodStartDate = @PreviousStartDate, 
+  @ReportingPeriodEndDate = @PreviousEndDate,  
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable = 'ASC_Sandbox.ASCOF_2BC_Previous'
+
+--================== ASCOF 2E =====================
+
+--Latest statistical reporting period
+--Part 1: LD Cohort
+EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards
+  @ReportingPeriodStartDate = @LatestStartDate,
+  @ReportingPeriodEndDate = @LatestEndDate, 
+  @LD_Filter = 1,
+  @InputTable = @InputTable, 
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_LD_Latest',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk_Latest'
+
+--Part 2: All PSR
+EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards
+  @ReportingPeriodStartDate = @LatestStartDate,
+  @ReportingPeriodEndDate = @LatestEndDate, 
+  @LD_Filter = 0,
+  @InputTable = @InputTable, 
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_All_Latest',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_All_Unk_Latest'
+
+--Previous statistical reporting period
+--Part 1: LD Cohort
+EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards
+  @ReportingPeriodStartDate = @PreviousStartDate,
+  @ReportingPeriodEndDate = @PreviousEndDate, 
+  @LD_Filter = 1,
+  @InputTable = @InputTable, 
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_LD_Previous',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk_Previous'
+
+--Part 2: All PSR
+EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards
+  @ReportingPeriodStartDate = @PreviousStartDate,
+  @ReportingPeriodEndDate = @PreviousEndDate, 
+  @LD_Filter = 0,
+  @InputTable = @InputTable, 
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_All_Previous',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_All_Unk_Previous'
+
+--================== ASCOF 3D =====================
+----Latest reporting year----
+EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards
+  @ReportingPeriodStartDate = @LatestStartDate,
+  @ReportingPeriodEndDate = @LatestEndDate, 
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_3D_Latest',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk_Latest'
+
+EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards
+  @ReportingPeriodStartDate = @PreviousStartDate,
+  @ReportingPeriodEndDate = @PreviousEndDate, 
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @OutputTable1 = 'ASC_Sandbox.ASCOF_3D_Previous',
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk_Previous'
+
+
+--================== ASCOF 2D ====================
 ----Latest reporting period  (2D is always 3 months behind the latest reporting period, as need 12 weeks extra data to measure outcomes)
 EXEC ASC_Sandbox.Create_ASCOF2D
 --Dates
-  @ReportingPeriodStartDate = '2024-07-01', --these dates are always 3m behind the reporting period 
-  @ReportingPeriodEndDate = '2025-06-30', 
+  @ReportingPeriodStartDate = @2D_LatestStartDate, --dates specific to 2D due to 3m lag
+  @ReportingPeriodEndDate = @2D_LatestEndDate, 
 --Inputs
-  @InputTable = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250930_JoinedSubmissions_Latest_Person_Data',
-  @InputTable_SUS = 'ASC_Sandbox.ASCOF2D_SUS_251125',  --should be updated with ASC sandbox table made in step above commented out
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @InputTable_SUS = @SUS_InputData, 
 --Outputs
   @OutputTable_Part1 = 'ASC_Sandbox.ASCOF2D_Part1_Latest',
   @OutputTable_Part1_Demographics = 'ASC_Sandbox.ASCOF2D_Part1_Demographics_Latest',
@@ -113,153 +198,162 @@ EXEC ASC_Sandbox.Create_ASCOF2D
   @OutputTable_Part2_Demographics = 'ASC_Sandbox.ASCOF2D_Part2_Demographics_Latest',
   @OutputTable_Venn = 'ASC_Sandbox.ASCOF2D_Venn_Latest'
 
---Final tables for ASCOF 2D-----
+----Previous reporting period  (will be an additional 3 months behind the latest 2D figures above)
+EXEC ASC_Sandbox.Create_ASCOF2D
+--Dates
+  @ReportingPeriodStartDate = @2D_PreviousStartDate, --dates specific to 2D due to 3m lag
+  @ReportingPeriodEndDate = @2D_PreviousEndDate, 
+--Inputs
+  @InputTable = @InputTable,
+  @InputTable_PersonDetails = @PersonDetailsTable,
+  @InputTable_SUS = @SUS_InputData, 
+--Outputs
+  @OutputTable_Part1 = 'ASC_Sandbox.ASCOF2D_Part1_Previous',
+  @OutputTable_Part1_Demographics = 'ASC_Sandbox.ASCOF2D_Part1_Demographics_Previous',
+  @OutputTable_Part2 = 'ASC_Sandbox.ASCOF2D_Part2_Previous',
+  @OutputTable_Part2_Demographics = 'ASC_Sandbox.ASCOF2D_Part2_Demographics_Previous',
+  @OutputTable_Venn = 'ASC_Sandbox.ASCOF2D_Venn_Previous'
 
---ASCOF 2D Part 1 metrics
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Metrics
-SELECT * 
-INTO ASC_Sandbox.ASCOF2D_Part1_Metrics
-FROM ASC_Sandbox.ASCOF2D_Part1_Latest --latest reporting period
-UNION ALL
-SELECT*
-FROM DHSC_Reporting.ASCOF2D_Part1_Metrics --table with prev. reporting periods for part 1
-
---ASCOF 2D Part 1 metrics demographic breakdown
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Metrics_Demographic_Breakdown
-SELECT * 
-INTO ASC_Sandbox.ASCOF2D_Part1_Metrics_Demographic_Breakdown
-FROM ASC_Sandbox.ASCOF2D_Part1_Demographics_Latest --latest reporting period (demographics)
-UNION ALL
-SELECT *
-FROM DHSC_Reporting.ASCOF2D_Part1_Metrics_Demographic_Breakdown --table containing prev. reporting periods (demographics) for part 1
-
---ASCOF 2D Part 2 metrics
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Metrics
-SELECT * 
-INTO ASC_Sandbox.ASCOF2D_Part2_Metrics
-FROM ASC_Sandbox.ASCOF2D_Part2_Latest --latest reporting period
-UNION ALL
-SELECT *
-FROM DHSC_Reporting.ASCOF2D_Part2_Metrics --table with prev. reporting periods for part 2
-
---ASCOF 2D Part 2 metrics demographic breakdown
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Metrics_Demographic_Breakdown
-SELECT *
-INTO ASC_Sandbox.ASCOF2D_Part2_Metrics_Demographic_Breakdown
-FROM ASC_Sandbox.ASCOF2D_Part2_Demographics_Latest ----latest reporting period
-UNION ALL
-SELECT *
-FROM DHSC_Reporting.ASCOF2D_Part2_Metrics_Demographic_Breakdown --table containing prev. reporting periods (demographics) for part 2
-
---ASCOF 2D Venn diagram
-DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Venn
-SELECT * 
-INTO ASC_Sandbox.ASCOF2D_Venn
-FROM ASC_Sandbox.ASCOF2D_Venn_Latest --latest reporting period for Venn diagram
-UNION ALL
-SELECT *
-FROM DHSC_Reporting.ASCOF2D_Venn --table containing prev. reporting periods for venn diagram
-
---================== Join all outcomes tables together =====================
+  
+-- ============================================================
+-- Join together with figures for all previous periods
+-- ============================================================
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF;
 
--- 2A
-SELECT 
-  Reporting_Period, --list fields for 2A to ensure columns are in the same order when unioned together
-  LA_Code,
-  LA_Name, 
-  Measure, 
-  [Description], 
-  [Group],
-  Numerator,
-  Denominator,
-  Outcome
+--Take data for previous periods
+SELECT *
 INTO ASC_Sandbox.LA_PBI_ASCOF
 FROM DHSC_Reporting.LA_PBI_ASCOF
+WHERE Reporting_Period <> --remove existing figures for previous reporting period, to replace with new ones
+  FORMAT(CAST(@PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@PreviousEndDate AS DATE), 'd MMM yy')
 UNION ALL
-SELECT  
-  Reporting_Period,
-  LA_Code,
-  LA_Name, 
-  Measure, 
-  [Description], 
-  [Group],
-  Numerator,
-  Denominator,
-  Outcome
+
+--Join with updated figures
+--2A
+SELECT *
+FROM ASC_Sandbox.ASCOF_2A_Previous
+UNION ALL
+SELECT *
 FROM ASC_Sandbox.ASCOF_2A_Latest
+UNION ALL 
 
+--2BC
+SELECT *
+FROM ASC_Sandbox.ASCOF_2BC_Previous
 UNION ALL
-
--- 2BC
 SELECT *
 FROM ASC_Sandbox.ASCOF_2BC_Latest
-
 UNION ALL
 
--- 2E Part 1 (LD)
-
+--2E LD cohort
+SELECT *
+FROM ASC_Sandbox.ASCOF_2E_LD_Previous
+UNION ALL
 SELECT *
 FROM ASC_Sandbox.ASCOF_2E_LD_Latest
-
 UNION ALL
 
--- 2E Part 1 (All)
-
+--2E All clients
+SELECT *
+FROM ASC_Sandbox.ASCOF_2E_All_Previous 
+UNION ALL
 SELECT *
 FROM ASC_Sandbox.ASCOF_2E_All_Latest
-
 UNION ALL
 
--- 3D 
-
+--3D
 SELECT *
-FROM ASC_Sandbox.ASCOF_3D_Latest;
+FROM ASC_Sandbox.ASCOF_3D_Latest
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF_3D_Previous
+
+--2D
+
+--ASCOF 2D Part 1 metrics
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Metrics
+SELECT *
+INTO ASC_Sandbox.ASCOF2D_Part1_Metrics
+FROM DHSC_Reporting.ASCOF2D_Part1_Metrics --all previous data
+WHERE Reporting_Period <> FORMAT(CAST(@2D_PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@2D_PreviousEndDate AS DATE), 'd MMM yy')
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part1_Latest --latest reporting period
+UNION ALL
+SELECT*
+FROM ASC_Sandbox.ASCOF2D_Part1_Previous --previous period revised
+
+
+
+--ASCOF 2D Part 2 metrics
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Metrics
+SELECT *
+INTO ASC_Sandbox.ASCOF2D_Part2_Metrics
+FROM DHSC_Reporting.ASCOF2D_Part2_Metrics --all previous data
+WHERE Reporting_Period <> FORMAT(CAST(@2D_PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@2D_PreviousEndDate AS DATE), 'd MMM yy')
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part2_Latest --latest reporting period
+UNION ALL
+SELECT*
+FROM ASC_Sandbox.ASCOF2D_Part2_Previous --previous period revised
 
 
 --================== Join together additional tables for some metrics =====================
 
---Output the following into one table:
---Number with unknown accommodation status for 2E (now incl. in denom)
---Number with unknown delivery mechanism for 3D
+--Join the latest figures produced with those for previous reporting periods for additional tables
+--1. Number with unknown accommodation status for 2E (now incl. in denom)
+--2. Number with unknown delivery mechanism for 3D
+--3. BCF data for 2C
+--4. Demographic data and venn diagram data for 2D
 
--- 2E Part 1
+-- 2E unknown accommodation status
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_Excl;
 
-SELECT*
+SELECT *
 INTO ASC_Sandbox.LA_PBI_ASCOF_Excl
 FROM DHSC_Reporting.LA_PBI_ASCOF_Excl
+WHERE Reporting_Period <>  --remove existing figures for previous reporting period, to replace with new ones
+  FORMAT(CAST(@PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@PreviousEndDate AS DATE), 'd MMM yy') 
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF_2E_LD_Unk_Previous
 UNION ALL
 SELECT *
 FROM ASC_Sandbox.ASCOF_2E_LD_Unk_Latest
-
 UNION ALL
-
--- 2E Part 2
+SELECT*
+FROM ASC_Sandbox.ASCOF_2E_All_Unk_Previous
+UNION ALL
 SELECT*
 FROM ASC_Sandbox.ASCOF_2E_All_Unk_Latest
-
 UNION ALL
 
--- 3D
-SELECT*
+-- 3D unkown delivery mechansim
+SELECT *
+FROM ASC_Sandbox.ASCOF_3D_Unk_Previous
+UNION ALL
+SELECT *
 FROM ASC_Sandbox.ASCOF_3D_Unk_Latest
 
---Output 2A figures disaggregated by final outcome
+-- 2A disaggregated by final outcome
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_2A_Disaggregated;
 
 SELECT *
 INTO ASC_Sandbox.LA_PBI_ASCOF_2A_Disaggregated
 FROM DHSC_Reporting.LA_PBI_ASCOF_2A_Disaggregated
+WHERE Reporting_Period <>  --remove existing figures for previous reporting period, to replace with new ones
+  FORMAT(CAST(@PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@PreviousEndDate AS DATE), 'd MMM yy') 
 UNION ALL
 SELECT *
-FROM ASC_Sandbox.ASCOF_2A_Disaggregated_Latest;
+FROM ASC_Sandbox.ASCOF_2A_Disaggregated_Previous
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF_2A_Disaggregated_Latest
 
 
--- Output 2C Figures for BCF dashboard page
---has remained the same for R2 as the R1 version of the ASCOF code
-
+-- 2C Figures for BCF dashboard page
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_BCF
 
 SELECT
@@ -280,6 +374,46 @@ ON a.LA_Code = b.LA_Code
 WHERE Measure = 'ASCOF 2C'
 AND Reporting_Period <> '1 Apr 23 - 31 Mar 24'  --Exclude first year
 
+--ASCOF 2D Part 1 metrics demographic breakdown
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Metrics_Demographic_Breakdown
+
+SELECT * 
+INTO ASC_Sandbox.ASCOF2D_Part1_Metrics_Demographic_Breakdown
+FROM DHSC_Reporting.ASCOF2D_Part1_Metrics_Demographic_Breakdown
+WHERE Reporting_Period <> FORMAT(CAST(@2D_PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@2D_PreviousEndDate AS DATE), 'd MMM yy')
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part1_Demographics_Latest --latest reporting period (demographics)
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part1_Demographics_Previous --previous period revised (demographics)
+
+--ASCOF 2D Part 2 metrics demographic breakdown
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Metrics_Demographic_Breakdown
+
+SELECT * 
+INTO ASC_Sandbox.ASCOF2D_Part2_Metrics_Demographic_Breakdown
+FROM DHSC_Reporting.ASCOF2D_Part2_Metrics_Demographic_Breakdown
+WHERE Reporting_Period <> FORMAT(CAST(@2D_PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@2D_PreviousEndDate AS DATE), 'd MMM yy')
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part2_Demographics_Latest --latest reporting period (demographics)
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Part2_Demographics_Previous --previous period revised (demographics)
+
+--ASCOF 2D Venn diagram
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Venn
+SELECT * 
+INTO ASC_Sandbox.ASCOF2D_Venn
+FROM DHSC_Reporting.ASCOF2D_Venn
+WHERE Reporting_Period <> FORMAT(CAST(@2D_PreviousStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@2D_PreviousEndDate AS DATE), 'd MMM yy')
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Venn_Latest --latest reporting period (venn)
+UNION ALL
+SELECT *
+FROM ASC_Sandbox.ASCOF2D_Venn_Previous --previous period revised (venn)
 
 --============= QA Checks =============================
 --These assess that the union has worked correctly 
@@ -327,34 +461,51 @@ WHERE Outcome_Percent > 100
 
 --============= Delete tables no longer required =====================
 
-
+/*
 --2A
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2A_Latest
-
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2A_Previous
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2A_Disaggregated_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2A_Disaggregated_Previous
 
 --2BC
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2BC_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2BC_Previous
 
 --2E
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_LD_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_All_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_LD_Unk_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_All_Unk_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_LD_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_All_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_LD_Unk_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2E_All_Unk_Previous
 
 --3D
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_3D_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_3D_Unk_Latest
+
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_3D_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_3D_Unk_Previous
 
 --2D 
 
 --Part 1
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Demographics_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Demographics_Previous
+
 
 --Part 2
+
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Latest
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Demographics_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Previous
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part2_Demographics_Previous
 
 --Venn 
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Venn_Latest
+DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Venn_Previous
+ */

@@ -13,8 +13,8 @@
 -----------------------------------------------------
 ---- Set reporting period dates -----
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2025-04-01'  --Update to cover last 3 months of reporting period
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-06-30'
+DECLARE @ReportingPeriodStartDate AS DATE = '2025-10-01'  --Update to cover last 3 months of reporting period
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-12-31'
 
 
 -----------------------------------------------------

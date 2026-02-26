@@ -9,32 +9,33 @@
 
 -- Amend reporting period below:
 
-DECLARE @ReportingPeriodStartDate AS DATE = '2024-04-01';
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2025-01-01';
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-12-31';
 
 -- Set "as of" (cut-off) date to select submissions below:
 
 -- Select submissions as of last day of submission window following end of reporting period
 --DECLARE @SubmissionsAsOfDate AS DATE = DATEADD(day, -1, DATEADD(month, 1, DATEADD(day, 1, @ReportingPeriodEndDate)));
 -- Select submission as of manually-specified date, when all LA submissions received and main DQ issues resolved:
-DECLARE @SubmissionsAsOfDate AS DATE = '2025-05-08';
+DECLARE @SubmissionsAsOfDate AS DATE = '2026-02-11';
 
 ---------------------------------------------------------------------------
 
 SET NOCOUNT ON; -- Hides "(X rows affected)" messages
 
 -- Exit if submission reporting period reference table is not up to date
+-- ** No longer required as ref table now created in AGEM pipeline **
 
-DECLARE @MaxREFImportDate AS DATE = (SELECT CONVERT(DATE, MAX(ImportDate)) FROM ASC_Sandbox.REF_Submission_Reporting_Periods);
+--DECLARE @MaxREFImportDate AS DATE = (SELECT CONVERT(DATE, MAX(ImportDate)) FROM ASC_Sandbox.REF_Submission_Reporting_Periods);
 
-IF EXISTS (SELECT * FROM DHSC_ASC.CLD_R1_Raw WHERE CONVERT(DATE, ImportDate) > @MaxREFImportDate AND CONVERT(DATE, ImportDate) <= @SubmissionsAsOfDate)
-BEGIN
-  PRINT 'EXITING. ASC_Sandbox.REF_Submission_Reporting_Periods must be updated before this script can be run.';
-  RETURN
-END
+--IF EXISTS (SELECT * FROM DHSC_ASC.CLD_R1_Raw WHERE CONVERT(DATE, ImportDate) > @MaxREFImportDate AND CONVERT(DATE, ImportDate) <= @SubmissionsAsOfDate)
+--BEGIN
+--  PRINT 'EXITING. ASC_Sandbox.REF_Submission_Reporting_Periods must be updated before this script can be run.';
+--  RETURN
+--END
 
-ELSE
-  PRINT CONCAT('Creating main deduplicated CLD table covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, ' as of ', @SubmissionsAsOfDate);
+--ELSE
+--  PRINT CONCAT('Creating main deduplicated CLD table covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, ' as of ', @SubmissionsAsOfDate);
 
 ---------------------------------------------------------------------------
 -- 1. Get submissions covering the period
@@ -51,27 +52,13 @@ PRINT '';
 PRINT '=====================================================';
 PRINT CONCAT('Selecting latest submissions covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, '...');
 
--- Execute GetSubmissions procedure to select submissions covering 12-mo period
--- according to stated reporting period and insert results into #TempSubmissions
---
--- NB stated reporting period is currently used rather than derived reporting
--- period because if an LA's return doesn't actually cover the full 12 months
--- then you wouldn't have any data for that LA included in this table, as it's
--- just using a single submission. (Whereas with joined submissions you would use
--- previous returns to make up data covering the period, and so are likely to only
--- ever be missing at most the latest quarter of data.)
--- Checking the derived reporting period of returns and requesting resubmissions
--- is now part of DQ monitoring so going forwards could look to switch to using
--- the derived reporting period, but if we want to be a little lenient with data
--- included for publication etc it's better to stick with stated reporting period
--- for now (while we're still getting the odd one or two incomplete submissions
--- each quarter).
-
+-- Execute GetSubmissions procedure to select submissions covering 12-mo period according
+-- to derived reporting period and insert results into #TempSubmissions
 INSERT INTO #TempSubmissions
 EXEC ASC_Sandbox.GetSubmissions
   @ReportingPeriodStartDate = @ReportingPeriodStartDate,
   @ReportingPeriodEndDate = @ReportingPeriodEndDate,
-  @SubmissionReportingPeriod = 'Stated',
+  @SubmissionReportingPeriod = 'Derived',
   @SubmissionsAsOfDate = @SubmissionsAsOfDate;
 
 --============== MANUALLY ADD/REMOVE SUBMISSIONS ===================
@@ -87,13 +74,18 @@ FROM #TempSubmissions
 --WHERE LA_Name <> '' -- Remove any submissions to be replaced
 ;
 
---INSERT INTO #Submissions
---VALUES (
---  '', -- LA_Name &
---  '', -- ImportDate of submissions to manually add
---  @ReportingPeriodStartDate,
---  @ReportingPeriodStartDate
---  );
+INSERT INTO #Submissions
+VALUES
+  ('Westminster', -- LA_Name &
+  '2025-10-30 11:37:22.493', -- ImportDate of submissions to manually add
+  @ReportingPeriodStartDate,
+  @ReportingPeriodEndDate
+  ),
+  ('Royal Borough of Kensington and Chelsea',
+  '2025-10-30 11:22:06.270',
+  @ReportingPeriodStartDate,
+  @ReportingPeriodEndDate
+  );
 
 --====================== SECTION END ===============================
 
@@ -201,7 +193,7 @@ PRINT 'then uncomment and run section 6 to create final output and clean up.';
 
 ---- Create output table name and write final output to sandbox
 --DECLARE @TableName AS VARCHAR(256) = CONCAT('CLD_',
---                                             FORMAT((SELECT MIN(Ref_Period_Start_Date) FROM ASC_Sandbox.Temp_SingleSubs_UniqueEvents), 'yyMMdd'),
+--                                            FORMAT((SELECT MIN(Ref_Period_Start_Date) FROM ASC_Sandbox.Temp_SingleSubs_UniqueEvents), 'yyMMdd'),
 --                                             '_',
 --                                             FORMAT((SELECT MAX(Ref_Period_End_Date) FROM ASC_Sandbox.Temp_SingleSubs_UniqueEvents), 'yyMMdd'),
 --                                             '_SingleSubmissions');

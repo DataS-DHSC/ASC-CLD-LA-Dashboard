@@ -1068,9 +1068,9 @@ AS
           FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
           lac.LA_Code,
           lac.LA_Name,
-          lac.Age_Band AS [Group],
           'ASCOF 2A' AS Measure,
           'The proportion of people who received short-term services during the year - who previously were not receiving services - where no further request was made for ongoing support (%)' AS [Description],
+          lac.Age_Band AS [Group],
           ISNULL(agg.Numerator, 0) AS Numerator,
           ISNULL(agg.Denominator, 0) AS Denominator,
           CASE 

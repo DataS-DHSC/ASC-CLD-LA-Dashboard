@@ -5,6 +5,7 @@ ASC_Sandbox.<submission name>_Latest_Person_Data
 
 The breakdowns that are processed are:
 
+  LA_Person_Unique_Identifier,
   Accommodation_Status,
   Accommodation_Status_Group,
   Employment_Status,
@@ -1095,6 +1096,185 @@ AS
       ON a.LA_Code = b.LA_Code
       AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
 
+
+
+    --#####################################################################
+    -- Getting latest LA_Person_Unique_Identifier for each person
+    --#####################################################################
+
+    --BEGIN QA block (can be removed)
+    --check whether for each LA - Der_NHS_LA_Combined_Person_ID pair, there is more than one, or no, entries for LA_Person_Unique_Identifier
+    DROP TABLE IF EXISTS #QA_bad_groups
+
+    SELECT 
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID,
+      COUNT(DISTINCT LA_Person_Unique_Identifier) AS distinct_LA_UPIs,
+      MAX(LA_Person_Unique_Identifier) AS First_LA_Person_Unique_Identifier,
+      MIN(LA_Person_Unique_Identifier) AS Last_LA_Person_Unique_Identifier
+    INTO #QA_bad_groups
+    FROM #CLD
+    GROUP BY 
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID
+    HAVING COUNT(DISTINCT LA_Person_Unique_Identifier) > 1
+        OR COUNT(DISTINCT LA_Person_Unique_Identifier) = 0;
+    -- END QA block
+
+    -- BEGIN QA block (can be removed)
+    -- for the bad groups, check the frequency of occurence of each LA_Person_Unique_Identifier
+    DROP TABLE IF EXISTS #QA_duplicate_LA_ID_occurrence_count
+
+    SELECT
+      c.LA_Code,
+      c.Der_NHS_LA_Combined_Person_ID,
+      c.LA_Person_Unique_Identifier,
+      COUNT(*) AS occurrence_count
+    INTO #QA_duplicate_LA_ID_occurrence_count
+    FROM #CLD c
+    WHERE EXISTS (
+      SELECT 1
+      FROM #QA_bad_groups bg
+      WHERE bg.LA_Code = c.LA_Code
+        AND bg.Der_NHS_LA_Combined_Person_ID = c.Der_NHS_LA_Combined_Person_ID
+    )
+    GROUP BY
+      c.LA_Code,
+      c.Der_NHS_LA_Combined_Person_ID,
+      c.LA_Person_Unique_Identifier
+    ORDER BY
+      c.LA_Code,
+      c.Der_NHS_LA_Combined_Person_ID,
+      occurrence_count DESC,
+      c.LA_Person_Unique_Identifier;
+   -- END QA block
+
+    -- Create table with cleaned LA_Person_Unique_Identifier where invalid entries have been be mapped to valid entries
+    -- Create a new variable Der_LA_Person_Unique_Identifier_Known
+    -- Create a new variable Number_Of_Rows_With_Same__LA_Code__Der_NHS_LA_Combined_Person_ID__LA_Person_Unique_Identifier
+    DROP TABLE IF EXISTS #LA_Person_Unique_Identifier_Cleaned
+    SELECT
+      *,
+
+      CASE
+        WHEN LA_Person_Unique_Identifier = 'Unknown'
+        THEN 0
+        ELSE 1
+      END AS Der_LA_Person_Unique_Identifier_Known,
+
+      COUNT(*) OVER (
+          PARTITION BY 
+            LA_Code,
+            Der_NHS_LA_Combined_Person_ID,
+            LA_Person_Unique_Identifier
+        ) AS Number_Of_Rows_With_Same__LA_Code__Der_NHS_LA_Combined_Person_ID__LA_Person_Unique_Identifier
+
+    INTO #LA_Person_Unique_Identifier_Cleaned
+    FROM (
+      SELECT 
+        LA_Code,
+        Der_NHS_LA_Combined_Person_ID,
+        Event_Start_Date,
+        Der_Event_End_Date,
+	      Ref_Period_End_Date,
+        CASE
+          WHEN LA_Person_Unique_Identifier IN ('Unknown','Invalid and not mapped') OR LA_Person_Unique_Identifier IS NULL
+          THEN 'Unknown'
+          ELSE LA_Person_Unique_Identifier
+        END AS LA_Person_Unique_Identifier
+      FROM #CLD 
+    ) A
+
+    -- Identify latest known LA_Person_Unique_Identifier for each LA-person pair. This is done by:
+    -- 1. Sort by Der_LA_Person_Unique_Identifier_Known (to favour known over unknown values)
+    -- 2. Sort by latest event end date (nulls overwritten to 9999 to ensure they appear first)
+    -- 3. Sort by latest event start date
+    DROP TABLE IF EXISTS #LA_Person_Unique_Identifier_Row1;
+    WITH Latest_LA_Person_Unique_Identifier
+    AS (
+      SELECT 
+        *,
+        DENSE_RANK() OVER (
+          PARTITION BY 
+                  LA_Code,
+                  Der_NHS_LA_Combined_Person_ID
+          ORDER BY
+                  Der_LA_Person_Unique_Identifier_Known DESC,
+			            Ref_Period_End_Date DESC, -- prioritise later submissions
+                  Der_Event_End_Date DESC,
+                  Event_Start_Date DESC,
+                  Number_Of_Rows_With_Same__LA_Code__Der_NHS_LA_Combined_Person_ID__LA_Person_Unique_Identifier DESC -- prioritise the more frequent value
+          ) AS Rn
+        FROM #LA_Person_Unique_Identifier_Cleaned)
+    SELECT 
+      *
+    INTO #LA_Person_Unique_Identifier_Row1
+    FROM Latest_LA_Person_Unique_Identifier
+    WHERE Rn = 1
+
+	-- Get all unique ID's to concatenate
+	DROP TABLE IF EXISTS #Unique_IDs
+
+	SELECT DISTINCT LA_Code, Der_NHS_LA_Combined_Person_ID, LA_Person_Unique_Identifier
+	INTO #Unique_IDs
+	FROM #CLD;
+
+
+	-- Concatenates LA ID numbers together
+	DROP TABLE IF EXISTS #LA_Person_Unique_Identifier_Concatenates;
+	WITH 
+	 LA_ID_Concat AS
+		(
+			SELECT LA_Code, Der_NHS_LA_Combined_Person_ID, STRING_AGG(LA_Person_Unique_Identifier, ', ') AS LA_Person_Unique_Identifier_Concat
+			FROM #Unique_IDs
+			GROUP BY LA_Code, Der_NHS_LA_Combined_Person_ID
+		)
+	SELECT a.*, b.LA_Person_Unique_Identifier_Concat
+	INTO #LA_Person_Unique_Identifier_Concatenates
+	FROM #LA_Person_Unique_Identifier_Row1 a
+	LEFT JOIN LA_ID_Concat b
+	ON a.LA_Code = b.LA_Code
+	AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID;
+
+    -- Identifies conflicting LA_Person_Unique_Identifier per person per LA
+    DROP TABLE IF EXISTS #LA_Person_Unique_Identifier_Duplicates
+    SELECT
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID,
+      COUNT(DISTINCT LA_Person_Unique_Identifier) AS [COUNT],
+      MAX(LA_Person_Unique_Identifier) AS An_LA_Person_Unique_Identifier,
+      MIN(LA_Person_Unique_Identifier) AS Another_LA_Person_Unique_Identifier
+    INTO #LA_Person_Unique_Identifier_Duplicates
+    FROM #LA_Person_Unique_Identifier_Concatenates
+    GROUP BY
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID
+    HAVING
+      COUNT(DISTINCT LA_Person_Unique_Identifier) >1
+
+    -- Overwrites conflicting LA_Person_Unique_Identifier with 'Unknown'
+    DROP TABLE IF EXISTS #LA_Person_Unique_Identifier_Deduped
+    SELECT DISTINCT
+      a.LA_Code,
+      a.Der_NHS_LA_Combined_Person_ID,
+      CASE
+        WHEN b.[COUNT] IS NOT NULL
+        THEN 'Unknown'
+        ELSE a.LA_Person_Unique_Identifier
+        END AS LA_Person_Unique_Identifier_Latest,
+	a.LA_Person_Unique_Identifier_Concat
+    INTO #LA_Person_Unique_Identifier_Deduped
+    FROM #LA_Person_Unique_Identifier_Concatenates a
+    LEFT JOIN #LA_Person_Unique_Identifier_Duplicates b
+      ON a.LA_Code = b.LA_Code
+      AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
+
+
+
+    --#####################################################################
+    -- Create output table
+    --#####################################################################
+
     -- Join for one record per person
     DROP TABLE IF EXISTS #OutputTable
 
@@ -1102,6 +1282,8 @@ AS
       FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period_End_Date,
       a.LA_Code,
       a.Der_NHS_LA_Combined_Person_ID,
+      j.LA_Person_Unique_Identifier_Latest,
+	  j.LA_Person_Unique_Identifier_Concat,
       a.Accommodation_Status,
       a.Accommodation_Status_Group,
       d.Employment_Status,
@@ -1145,6 +1327,9 @@ AS
     LEFT JOIN #Client_Funding_Status_Deduped i
       ON a.LA_Code = i.LA_Code
       AND a.Der_NHS_LA_Combined_Person_ID = i.Der_NHS_LA_Combined_Person_ID
+    LEFT JOIN #LA_Person_Unique_Identifier_Deduped j
+      ON a.LA_Code = j.LA_Code
+      AND a.Der_NHS_LA_Combined_Person_ID = j.Der_NHS_LA_Combined_Person_ID
 
 
 

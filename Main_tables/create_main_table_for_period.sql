@@ -12,31 +12,32 @@
 -- Amend reporting period below:
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01';
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-03-31';
+DECLARE @ReportingPeriodEndDate AS DATE = '2025-12-31';
 
 -- Set "as of" (cut-off) date to select submissions below:
 
 -- Select submissions as of last day of submission window following end of reporting period
 --DECLARE @SubmissionsAsOfDate AS DATE = DATEADD(day, -1, DATEADD(month, 1, DATEADD(day, 1, @ReportingPeriodEndDate)));
 -- Select submission as of manually-specified date, when all LA submissions received and main DQ issues resolved:
-DECLARE @SubmissionsAsOfDate AS DATE = '2025-05-08';
+DECLARE @SubmissionsAsOfDate AS DATE = '2026-02-11';
 
 ---------------------------------------------------------------------------
 
 SET NOCOUNT ON; -- Hides "(X rows affected)" messages
 
 -- Exit if submission reporting period reference table is not up to date
+-- ** No longer required as ref table now created in AGEM pipeline **
 
-DECLARE @MaxREFImportDate AS DATE = (SELECT CONVERT(DATE, MAX(ImportDate)) FROM ASC_Sandbox.REF_Submission_Reporting_Periods);
+--DECLARE @MaxREFImportDate AS DATE = (SELECT CONVERT(DATE, MAX(ImportDate)) FROM ASC_Sandbox.REF_Submission_Reporting_Periods);
 
-IF EXISTS (SELECT * FROM DHSC_ASC.CLD_R1_Raw WHERE CONVERT(DATE, ImportDate) > @MaxREFImportDate AND CONVERT(DATE, ImportDate) <= @SubmissionsAsOfDate)
-BEGIN
-  PRINT 'EXITING. ASC_Sandbox.REF_Submission_Reporting_Periods must be updated before this script can be run.';
-  RETURN
-END
+--IF EXISTS (SELECT * FROM DHSC_ASC.CLD_R1_Raw WHERE CONVERT(DATE, ImportDate) > @MaxREFImportDate AND CONVERT(DATE, ImportDate) <= @SubmissionsAsOfDate)
+--BEGIN
+--  PRINT 'EXITING. ASC_Sandbox.REF_Submission_Reporting_Periods must be updated before this script can be run.';
+--  RETURN
+--END
 
-ELSE
-  PRINT CONCAT('Creating main deduplicated CLD table covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, ' as of ', @SubmissionsAsOfDate);
+--ELSE
+--  PRINT CONCAT('Creating main deduplicated CLD table covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, ' as of ', @SubmissionsAsOfDate);
 
 ---------------------------------------------------------------------------
 -- 1. Get submissions covering the period
@@ -222,7 +223,7 @@ PRINT 'then uncomment and run section 6 to create final output and clean up.';
 --              FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;';
 --EXEC(@Query);
 
----- Drop temporary tables
+-- Drop temporary tables
 
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_RawSubmissions;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod;
