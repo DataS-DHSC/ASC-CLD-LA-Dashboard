@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------
 -- create_FilterToEventsInPeriod_procedure.sql
 --
--- Create procedure to filter CLD R1 raw table to events in period - services
+-- Create procedure to filter CLD raw table to events in period - services
 -- occurring at any point in period and req/ass/rev events ending in period
 --
 -- Note:

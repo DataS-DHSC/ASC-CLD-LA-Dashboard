@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------
 -- create_GetDQValues_procedure.sql
 --
--- Takes an input table of Der_Unique_Record_ID, joins with CLD_DQ_Items_R1 and pivots
+-- Takes an input table of Der_Unique_Record_ID, joins with CLD_DQ_Items and pivots
 -- the data field values, field statuses (mandatory, applicable but not mandatory, not
 -- applicable or undetermined in row) and data validation check results into long form
 -- for easy summarising.
@@ -44,7 +44,8 @@ AS
       WHEN chk_ >= 1 THEN 'Passed: Valid'
       WHEN chk_ = 0 THEN 'Passed: Blank (Not Mandatory)'
       WHEN chk_ = -1 THEN 'Failed: Blank (Mandatory)'
-      WHEN chk_ < -1 THEN 'Failed: Invalid'
+      WHEN chk_ > -7 AND chk_ < -1 THEN 'Failed: Invalid'
+      WHEN chk_ = -7 THEN 'Failed: Release 1'
     END FieldValidity,
     [Value],
     COUNT(*) Count
@@ -60,7 +61,7 @@ AS
       chk_,
       [Value]
     FROM (SELECT Der_Unique_Record_ID FROM ASC_Sandbox.DQ_InputTable) Record_IDs
-    LEFT JOIN DHSC_ASC.CLD_DQ_Items_R1 DQ_Items
+    LEFT JOIN DHSC_ASC.CLD_DQ_Items DQ_Items
     ON DQ_Items.Der_Unique_Record_ID = Record_IDs.Der_Unique_Record_ID
     CROSS APPLY (
     VALUES
@@ -99,11 +100,6 @@ AS
       cond_GP_Practice_Code,
       chk_GP_Practice_Code,
       CAST(GP_Practice_Code AS VARCHAR(255))),
-
-      ('Person details', 'GP_Practice_Name',
-      cond_GP_Practice_Name,
-      chk_GP_Practice_Name,
-      CAST(GP_Practice_Name AS VARCHAR(255))),
 
       ('Person details', 'Gender',
       cond_Gender,
@@ -274,11 +270,6 @@ AS
       cond_Provider_CQC_Location_ID,
       chk_Provider_CQC_Location_ID,
       CAST(Provider_CQC_Location_ID AS VARCHAR(255))),
-
-      ('Events (services only)', 'Provider_CQC_Location_Name',
-      cond_Provider_CQC_Location_Name,
-      chk_Provider_CQC_Location_Name,
-      CAST(Provider_CQC_Location_Name AS VARCHAR(255))),
 
       ('Events (reviews only)', 'Review_Reason',
       cond_Review_Reason,

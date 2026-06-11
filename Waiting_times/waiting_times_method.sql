@@ -3,7 +3,7 @@
 --###################################################################################
 
 -- DHSC waiting times method for calculating LA level median waiting times. Method is provisional and subject to change following local authority feedback.
--- Version 1.0, 23 February 2026
+-- Version 1.1, 19 May 2026
 -- See AGEM CLD website for assocaited methodology document.
 
 -- Note: Quality of life improvements, such as improved table and variable names, are planned for future update.
@@ -26,7 +26,7 @@
 			ELSE 'Invalid and not mapped'
 		  END AS Event_Type_Cleaned
 		INTO #all_events
-		FROM ASC_Sandbox.CLD_230401_251231_JoinedSubmissions
+		FROM DHSC_Reporting.CLD_230401_260331_JoinedSubmissions
 
 ---- Stage 1.2 Filter for relevant assessments and services
 	DROP TABLE IF EXISTS #filtered_assessments_and_services
@@ -79,7 +79,6 @@
 	
 	--- Stage 1.3c Filter out requests from existing clients
 		DROP TABLE IF EXISTS #filtered_requests
-
 		SELECT r.*
 		INTO #filtered_requests
 		FROM  #requests_over_25 r
@@ -88,8 +87,19 @@
 			  r.LA_Code = s.LA_Code
 			  AND r.Der_NHS_LA_Combined_Person_ID = s.Der_NHS_LA_Combined_Person_ID
 			  AND s.Event_Type_Cleaned = 'Service'
-			  -- The service ends within 12 months before the request, or after the request, or is still open
-			  AND (s.Der_Event_End_Date >= DATEADD(MONTH, -12, r.Event_Start_Date) OR s.Der_Event_End_Date IS NULL )
+			  AND(
+				-- A long term service ends within 12 months before the request, or after the request, or is still open
+				  (s.Service_Type_Cleaned IN ('Long term support: Nursing care',
+											   'Long term support: Residential care',
+											   'Long term support: Community',
+											   'Long term support: Prison')
+				  AND (s.Der_Event_End_Date >= DATEADD(MONTH, -12, r.Event_Start_Date) OR s.Der_Event_End_Date IS NULL ) )
+				OR
+				-- A 'Short term support: ST-Max' or 'Short term support: Other short term' service ends within 3 months before the request, or after the request, or is still open
+					(s.Service_Type_Cleaned IN ('Short term support: ST-Max',
+												'Short term support: Other short term')
+				  AND (s.Der_Event_End_Date >= DATEADD(MONTH, -3, r.Event_Start_Date) OR s.Der_Event_End_Date IS NULL ) )
+				  )
 			  -- The service starts before the request
 			  AND s.Event_Start_Date < r.Event_Start_Date
 		WHERE s.Der_NHS_LA_Combined_Person_ID IS NULL;
@@ -195,8 +205,9 @@
 		--AND a.person_all_events_requests = 0; -- see note
 
 ---- Stage 2.3 Identify requests and assessments which indicate progress
-	--- The source table for this analysis has had all data transformed to release 2 values. ...
-	--- ... When Event_Outcome_Cleaned is 'Release 1 specification only: Not mapped' it is capturing the release 1 only values of 'Progress to financial assessment ' and 'Progress to End of Life Care'.
+	--- Stage 2.3a Identify requests and single assessments which indicate progress
+		--- The source table for this analysis has had all data transformed to release 2 values. ...
+		--- ... When Event_Outcome_Cleaned is 'Release 1 specification only: Not mapped' it is capturing the release 1 only values of 'Progress to financial assessment ' and 'Progress to End of Life Care'.
 
 	DROP TABLE IF EXISTS #filtered_requests_assessments_and_services_3;
 
@@ -241,8 +252,51 @@
 		END AS request_indicates_progress_to_service
 
 	INTO #filtered_requests_assessments_and_services_3
-	FROM #filtered_requests_assessments_and_services_2
+	FROM #filtered_requests_assessments_and_services_2;
 
+	--- Stage 2.3b Identify consecutive assessments where at least one of them indicates progress to service
+		-- Use WITH function to build a temporary table to use in the next part of function. This instance chains two temporary tables (create_assessment_block and determine_block_progress) before the outputing the final table
+		WITH 
+			-- Assign IDs to events to identify when there are consecutive assessments
+			create_assessment_blocks AS 
+				(
+				SELECT base.*,
+						-- Create assessment flag
+							CASE WHEN base.Event_Type_Cleaned = 'Assessment' THEN 1 ELSE 0 END AS is_assessment,
+						-- Create assessment block ID
+							-- When a row is not an assessment it has a value of 1. A runnign total is created, by summing togeter all these values for each previous row for this person in the event chronology.
+							-- Therefore, with every non assessment row, the number increases. Consequently, consecutive assessments share the same running total, which becomes the assessment block ID.
+					SUM(CASE WHEN base.Event_Type_Cleaned <> 'Assessment' THEN 1 ELSE 0 END)
+						OVER (
+							PARTITION BY base.LA_Code, base.Der_NHS_LA_Combined_Person_ID
+							ORDER BY base.person_valid_event_order
+							ROWS UNBOUNDED PRECEDING
+						) AS assessment_block_id
+				FROM #filtered_requests_assessments_and_services_3 base 
+				),
+			-- Determine presence of assessment progress to service in block
+			determine_block_progress AS
+				(
+				SELECT blocks.*,
+					-- For each person, assessment block detect presence of any of the  assessments (single assessment or consecutive assessments) having an outcome which indicates progress to service
+						-- Note: if no assessments in block then max_flag_over_assessment_block outputs NULL
+						MAX(CASE WHEN blocks.is_assessment = 1 THEN COALESCE(blocks.assessment_indicates_progress_to_service, 0) END) -- coalesce with 0 arguement to ensure non-null result where there is an assessmetn in a block
+						OVER (PARTITION BY blocks.LA_Code, blocks.Der_NHS_LA_Combined_Person_ID, blocks.assessment_block_id) AS max_flag_over_assessment_block
+	
+				FROM create_assessment_blocks blocks
+				)
+			-- Create single indicator variable to be added to table which is only applied to assessment rows
+			SELECT prog.*,
+				CASE WHEN prog.is_assessment = 1 THEN prog.max_flag_over_assessment_block
+					ELSE NULL
+				END AS assessment_block_indicates_progress_to_service
+			INTO #filtered_requests_assessments_and_services_4
+			FROM determine_block_progress prog
+			ORDER BY LA_Code, Der_NHS_LA_Combined_Person_ID, person_valid_event_order; 
+
+			--- Drop variables
+				ALTER TABLE #filtered_requests_assessments_and_services_4
+				DROP COLUMN is_assessment, max_flag_over_assessment_block;
 
 ---- Stage 2.4 Link each request for a person to the first assessment and service following the request
 	DROP TABLE IF EXISTS #requests_bind_1
@@ -265,6 +319,7 @@
 		nextAsmt.Event_Start_Date AS next_assessment_start_date,
 		nextAsmt.Modified_Working_Age_Band AS next_assessment_Modified_Working_Age_Band,
 		nextAsmt.assessment_indicates_progress_to_service AS next_assessment_indicates_progress_to_service,
+		nextAsmt.assessment_block_indicates_progress_to_service AS next_assessment_block_indicates_progress_to_service,
 		nextAsmt.Der_Unique_Record_ID AS next_assessment_Der_Unique_Record_ID,
 
 		-- First Service after the Request
@@ -276,12 +331,12 @@
 		nextSrv.Der_Unique_Record_ID AS next_service_Der_Unique_Record_ID
 
 	INTO #requests_bind_1
-	FROM #filtered_requests_assessments_and_services_3 r
+	FROM #filtered_requests_assessments_and_services_4 r
 
 		-- First Assessment after request
 		OUTER APPLY (
 			SELECT TOP 1 x.*
-			FROM #filtered_requests_assessments_and_services_3 x
+			FROM #filtered_requests_assessments_and_services_4 x
 			WHERE x.LA_Code = r.LA_Code
 			  AND x.Der_NHS_LA_Combined_Person_ID = r.Der_NHS_LA_Combined_Person_ID
 			  AND x.person_valid_event_order > r.person_valid_event_order
@@ -292,7 +347,7 @@
 		-- First Service after request
 		OUTER APPLY (
 			SELECT TOP 1 y.*
-			FROM #filtered_requests_assessments_and_services_3 y
+			FROM #filtered_requests_assessments_and_services_4 y
 			WHERE y.LA_Code = r.LA_Code
 			  AND y.Der_NHS_LA_Combined_Person_ID= r.Der_NHS_LA_Combined_Person_ID
 			  AND y.person_valid_event_order > r.person_valid_event_order
@@ -303,16 +358,16 @@
 	ORDER BY r.LA_Code, r.Der_NHS_LA_Combined_Person_ID, r.person_valid_event_order;
 
 	---- Temporarily save down table to cut re-processing time
-	-- DROP TABLE IF EXISTS asc_Sandbox.waiting_times_requests_bind_1_dev
+	--DROP TABLE IF EXISTS ASC_Sandbox.Temp_Waiting_Times_S2_4
 	--SELECT *
-	--INTO asc_Sandbox.waiting_times_requests_bind_1_dev
-	--FROM #requests_bind_1
+	--INTO ASC_Sandbox.Temp_Waiting_Times_S2_4
+	--FROM #requests_bind_1;
 
 	--- Temporarily re-instate table to cut re-processing time
 	--DROP TABLE IF EXISTS #requests_bind_1;
 	--SELECT *
 	--INTO #requests_bind_1
-	--FROM ASC_Sandbox.waiting_times_requests_bind_1_dev;
+	--FROM ASC_Sandbox.Temp_Waiting_Times_S2_4;
 
 
 --###################################################################################
@@ -329,7 +384,8 @@
 			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_start_date ELSE next_assessment_start_date END AS temp_next_assessment_start_date,
 			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_Modified_Working_Age_Band ELSE next_assessment_Modified_Working_Age_Band END AS temp_next_assessment_Modified_Working_Age_Band,
 			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_Der_Unique_Record_ID ELSE next_assessment_Der_Unique_Record_ID END AS temp_next_assessment_Der_Unique_Record_ID,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_indicates_progress_to_service END AS temp_next_assessment_indicates_progress_to_service
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_indicates_progress_to_service END AS temp_next_assessment_indicates_progress_to_service,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_block_indicates_progress_to_service END AS temp_next_assessment_block_indicates_progress_to_service
 	INTO #requests_bind_1b
 	FROM (	SELECT *,
 				-- Create conversation 1 override flag
@@ -359,7 +415,8 @@
 			CASE WHEN next_assessment_service_override = 1 THEN next_service_start_date ELSE temp_next_assessment_start_date END AS modified_next_assessment_start_date,
 			CASE WHEN next_assessment_service_override = 1 THEN next_service_Modified_Working_Age_Band ELSE temp_next_assessment_Modified_Working_Age_Band END AS modified_next_assessment_Mod_Working_Age_Band,
 			CASE WHEN next_assessment_service_override = 1 THEN next_service_Der_Unique_Record_ID ELSE temp_next_assessment_Der_Unique_Record_ID END AS modified_next_assessment_Der_Unique_Record_ID,
-			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_indicates_progress_to_service END AS modified_next_assessment_indicates_progress_to_service
+			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_indicates_progress_to_service END AS modified_next_assessment_indicates_progress_to_service,
+			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_block_indicates_progress_to_service END AS modified_next_assessment_block_indicates_progress_to_service
 
 	INTO #requests_bind_2
 	FROM (
@@ -377,16 +434,16 @@
 	ALTER TABLE #requests_bind_2
 	DROP COLUMN temp_next_assessment_order, temp_next_assessment_event_type, temp_next_assessment_type, temp_next_assessment_start_date, temp_next_assessment_Modified_Working_Age_Band, temp_next_assessment_Der_Unique_Record_ID;
 
----- Stage 3.3 Exclude services from part 2 metric where an intervening assessment does not indicate progress to service
+---- Stage 3.3 Exclude services from part 2 metric where an intervening assessment block does not indicate progress to service
 	DROP TABLE IF EXISTS #requests_bind_3
 
 	SELECT *,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_order END AS modified_next_service_order,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_event_type END AS modified_next_service_event_type,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_type END AS modified_next_service_type,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_start_date END AS modified_next_service_start_date,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Modified_Working_Age_Band END AS modified_next_service_Mod_Working_Age_Band,
-			CASE WHEN modified_next_assessment_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Der_Unique_Record_ID END AS modified_next_service_Der_Unique_Record_ID
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_order END AS modified_next_service_order,
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_event_type END AS modified_next_service_event_type,
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_type END AS modified_next_service_type,
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_start_date END AS modified_next_service_start_date,
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Modified_Working_Age_Band END AS modified_next_service_Mod_Working_Age_Band,
+			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Der_Unique_Record_ID END AS modified_next_service_Der_Unique_Record_ID
 	INTO #requests_bind_3
 	FROM #requests_bind_2;
 
@@ -401,10 +458,34 @@
 							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
 							ORDER BY request_event_order) > request_event_order
 					THEN 1
-					ELSE 0
+				WHEN modified_next_assessment_order <= max_modified_next_assessment_order_prev 
+					THEN 1
+				WHEN modified_next_service_order <= max_modified_next_service_order_prev
+					THEN 1
+				ELSE 0
 				END AS request_starts_before_previous_request_follow_up_ends
+
 	INTO #requests_bind_4
-	FROM #requests_bind_3;
+	FROM (	SELECT *,
+				-- For each row for a person, detected the highest previous first response event order
+				-- Note: Coalesce, with the 0 value, is used to ensure the value is not NULL.
+					COALESCE(
+						MAX(modified_next_assessment_order) OVER (
+							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
+							ORDER BY request_event_order
+							ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+						),
+						0) AS max_modified_next_assessment_order_prev,
+				-- For each row for a person, detected the highest previous service event order
+				-- Note: Coalesce, with the 0 value, is used to ensure the value is not NULL.
+					COALESCE(
+						MAX(modified_next_service_order) OVER (
+							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
+							ORDER BY request_event_order
+							ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+						),
+						0) AS max_modified_next_service_order_prev
+			FROM #requests_bind_3) a;
 
 
 --###################################################################################
@@ -614,7 +695,7 @@
 	--- Athena dashboard outputs are resticted by specified date parameters
 
 	--- Set quarter parameter
-	DECLARE @Quarter AS VARCHAR(7) = 'Q3_2526';
+	DECLARE @Quarter AS VARCHAR(7) = 'Q4_2526';
 
 	--- Set Athena dashboard inclusion date parameters
 		-- Note: Statisitcal reporting periods are set to 1st day of finanical year quarters

@@ -782,7 +782,8 @@ AS
 	    Der_Birth_Month,
         CASE
           WHEN Der_Birth_Year IS NOT NULL AND Der_Birth_Month IS NOT NULL
-            THEN FLOOR((DATEDIFF(DAY, CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-01') AS DATE), '2025-03-31')) / 365.25)
+            THEN FLOOR((DATEDIFF(DAY, CAST(CONCAT(Der_Birth_Year, '-', Der_Birth_Month, '-01') AS DATE),
+            @ReportingPeriodEndDate)) / 365.25)
           ELSE NULL
         END AS Der_Age_End_Of_Period,
         DENSE_RANK() OVER (

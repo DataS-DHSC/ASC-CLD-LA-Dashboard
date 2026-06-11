@@ -13,7 +13,7 @@
 -- See example executions of procedure below
 --
 -- NB uses reporting periods from ASC_Sandbox.REF_Submission_Reporting_Periods
--- > run Create_REF_Submission_Reporting_Periods_table.sql to update this table
+-- (updated as part of AGEM pipeline)
 ---------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS ASC_Sandbox.GetSubmissions
 GO
@@ -59,6 +59,10 @@ AS
       )
       AND ImportDate > @ReportingPeriodEndDate
       AND CONVERT(date, ImportDate) <= @SubmissionsAsOfDate
+
+      -- Exclude files with known (major) issues
+      AND ImportDate NOT IN ('2026-04-23 13:28:24.253')
+
     ) c
     -- take the latest file submitted by each LA (of those meeting the above criteria)
     WHERE Row = 1

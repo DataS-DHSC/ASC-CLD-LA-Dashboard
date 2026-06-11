@@ -71,52 +71,55 @@ AS
       Gender AS Gender_Raw,
       Gender_Cleaned,
       Ethnicity AS Ethnicity_Raw,
-      Ethnicity_Cleaned_R2 as Ethnicity_Cleaned,
+      Ethnicity_Cleaned_R2 AS Ethnicity_Cleaned,
       Event_Outcome AS Event_Outcome_Raw,
-      Event_Outcome_Cleaned_R2 as Event_Outcome_Cleaned,
+      Event_Outcome_Cleaned_R2 AS Event_Outcome_Cleaned,
       Event_Outcome_Hierarchy,
       Service_Type AS Service_Type_Raw,
-      Service_Type_Cleaned_R2 as Service_Type_Cleaned,
-	  Review_Reason as Review_Reason_Raw,
-	  Review_Reason_Cleaned_R2 as Review_Reason_Cleaned,
+      Service_Type_Cleaned_R2 AS Service_Type_Cleaned,
+      Review_Reason AS Review_Reason_Raw,
+      Review_Reason_Cleaned_R2 AS Review_Reason_Cleaned,
 
       -- Derive high level categories
-      Ethnicity_Grouped_R2 as Ethnicity_Grouped,
-      Event_Outcome_Grouped_R2 as Event_Outcome_Grouped,
-      Service_Type_Grouped_R2 as Service_Type_Grouped,
+      Ethnicity_Grouped_R2 AS Ethnicity_Grouped,
+      Event_Outcome_Grouped_R2 AS Event_Outcome_Grouped,
+      Service_Type_Grouped_R2 AS Service_Type_Grouped,
 
       -- Derive review type field
-	  CASE
-        WHEN Review_Reason_Cleaned_R2 LIKE '%unplanned%' AND Event_Type = 'Review' THEN 'Unplanned'
-        WHEN Review_Reason_Cleaned_R2 LIKE 'planned%' AND Event_Type = 'Review' THEN 'Planned review of long term support' -- Category name updated for clarity
-		WHEN Review_Reason_Cleaned_R2 = 'Review of short term support' AND Event_Type = 'Review' THEN 'Review of short term support' -- new category added
-		WHEN Review_Reason_Cleaned_R2 = 'Invalid and not mapped' and Event_Type = 'Review' THEN 'Review Type Unknown' -- new to deal with addition from cleaning
+      CASE
+        WHEN Review_Reason_Cleaned_R2 LIKE 'Unplanned%' AND Event_Type = 'Review' THEN 'Unplanned'
+        WHEN Review_Reason_Cleaned_R2 LIKE 'Planned%' AND Event_Type = 'Review' THEN 'Planned review of long term support' -- Category name updated for clarity
+        WHEN Review_Reason_Cleaned_R2 = 'Review of short term support' AND Event_Type = 'Review' THEN 'Review of short term support' -- new category added
+        WHEN Review_Reason_Cleaned_R2 = 'Invalid and not mapped' and Event_Type = 'Review' THEN 'Review Type Unknown' -- new to deal with addition from cleaning
         WHEN (Review_Reason_Cleaned_R2 IS NULL OR Review_Reason_Cleaned_R2 = '') AND Event_Type = 'Review' THEN NULL
         WHEN Event_Type NOT LIKE '%Review%' THEN NULL
         ELSE 'Review Type Unknown'
       END AS Review_Type,
 
-    -- Create a new person ID field: traced NHS number if present, else LA-provided NHS number, else LA person ID
-    -- (row excluded if none present)
-    CASE
-      WHEN Der_NHS_Number_Traced_Pseudo IS NOT NULL THEN Der_NHS_Number_Traced_Pseudo
-      WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NOT NULL THEN Der_NHS_Number_Pseudo
-      WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NULL THEN CONCAT(LA_Code, '_', LA_Person_Unique_Identifier)
-    END AS Der_NHS_LA_Combined_Person_ID
+      -- Create a new person ID field: traced NHS number if present, else LA-provided NHS number, else LA person ID
+      -- (row excluded if none present)
+      CASE
+        WHEN Der_NHS_Number_Traced_Pseudo IS NOT NULL THEN Der_NHS_Number_Traced_Pseudo
+        WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NOT NULL THEN Der_NHS_Number_Pseudo
+        WHEN Der_NHS_Number_Traced_Pseudo IS NULL AND Der_NHS_Number_Pseudo IS NULL THEN CONCAT(LA_Code, '_', LA_Person_Unique_Identifier)
+      END AS Der_NHS_LA_Combined_Person_ID
 
     FROM ASC_Sandbox.InputTable AS a
-    LEFT JOIN ASC_Sandbox.REF_Ethnicity_Mapping e
+    LEFT JOIN ASC_Sandbox.REF_Ethnicity_Mapping AS e
     ON a.Ethnicity = e.Ethnicity_Raw
-    LEFT JOIN ASC_Sandbox.REF_Gender_Mapping g
+    LEFT JOIN ASC_Sandbox.REF_Gender_Mapping AS g
     ON a.Gender = g.Gender_Raw
-    LEFT JOIN ASC_Sandbox.REF_Service_Type_Mapping st
+    LEFT JOIN ASC_Sandbox.REF_Service_Type_Mapping AS st
     ON a.Service_Type = st.Service_Type_Raw
-    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping eo
+    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Mapping AS eo
     ON a.Event_Outcome = eo.Event_Outcome_Raw
-    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy_R2 eoh
+    LEFT JOIN ASC_Sandbox.REF_Event_Outcome_Hierarchy_R2 AS eoh
     ON eo.Event_Outcome_Cleaned_R2 = eoh.Event_Outcome_Spec
-	LEFT JOIN ASC_Sandbox.REF_Review_Reason_Mapping as rr
-	on a.Review_Reason = rr.Review_Reason_Raw
+    LEFT JOIN ASC_Sandbox.REF_Review_Reason_Mapping AS rr
+    ON a.Review_Reason = rr.Review_Reason_Raw
+
+    -- Drop rows with no person ID
+    WHERE COALESCE(Der_NHS_Number_Pseudo, Der_NHS_Number_Traced_Pseudo, LA_Person_Unique_Identifier) IS NOT NULL
   ) b
 
   -- Drop original Gender, Ethnicity, Service_Type and Event_Outcome fields to highlight "_Raw" / "_Cleaned" fields
@@ -204,7 +207,7 @@ AS
       ELSE 'Unknown'
     END AS Der_Working_Age_Band
 
-  INTO #Temp_der_age
+  INTO #DerivedAges
   FROM (
     SELECT
       *,
@@ -226,100 +229,98 @@ AS
     ) c
 
   ---------------------------------------------------------------------------
-  -- Map observation from release 2 to release 1 including variable cleaning
+  -- Get cleaned release 2 values from mapping tables
   ---------------------------------------------------------------------------
 
-    select 
-        d.*,
-		Client_Funding_Status as Client_Funding_Status_Raw,
-		Client_Funding_Status_Cleaned_R2 as Client_Funding_Status_Cleaned,
+  SELECT 
+    d.*,
+    Client_Funding_Status AS Client_Funding_Status_Raw,
+    Client_Funding_Status_Cleaned_R2 AS Client_Funding_Status_Cleaned,
 
-		Client_Type as Client_Type_Raw,
-		Client_Type_Cleaned_R2 as Client_Type_Cleaned,
+    Client_Type AS Client_Type_Raw,
+    Client_Type_Cleaned_R2 AS Client_Type_Cleaned,
 
-		Delivery_Mechanism as Delivery_Mechanism_Raw,
-		Delivery_Mechanism_Cleaned_R2 as Delivery_Mechanism_Cleaned,
+    Delivery_Mechanism AS Delivery_Mechanism_Raw,
+    Delivery_Mechanism_Cleaned_R2 AS Delivery_Mechanism_Cleaned,
 
-		Assessment_Type as Assessment_Type_Raw,
-		Assessment_Type_Cleaned_R2 as Assessment_Type_Cleaned,
+    Assessment_Type AS Assessment_Type_Raw,
+    Assessment_Type_Cleaned_R2 AS Assessment_Type_Cleaned,
 
-		Hearing_Impairment as Hearing_Impairment_Raw,
-		Hearing_Impairment_Cleaned_R2 as Hearing_Impairment_Cleaned,
+    Hearing_Impairment AS Hearing_Impairment_Raw,
+    Hearing_Impairment_Cleaned_R2 AS Hearing_Impairment_Cleaned,
 
-		Method_Of_Assessment as Method_Of_Assessment_Raw,
-		Method_Of_Assessment_Cleaned_R2 as Method_of_Assessment_Cleaned,
+    Method_Of_Assessment AS Method_Of_Assessment_Raw,
+    Method_Of_Assessment_Cleaned_R2 AS Method_of_Assessment_Cleaned,
 
-		Method_Of_Review as Method_Of_Review_Raw,
-		Method_Of_Review_Cleaned_R2 as Method_of_Review_Cleaned,
+    Method_Of_Review AS Method_Of_Review_Raw,
+    Method_Of_Review_Cleaned_R2 AS Method_of_Review_Cleaned,
 
-		Primary_Support_Reason as Primary_Support_Reason_Raw,
-		Primary_Support_Reason_Cleaned_R2 as Primary_Support_Reason_Cleaned,
+    Primary_Support_Reason AS Primary_Support_Reason_Raw,
+    Primary_Support_Reason_Cleaned_R2 AS Primary_Support_Reason_Cleaned,
 
-		Request_Route_Of_Access as Request_Route_Of_Access_Raw,
-		Request_Route_Of_Access_Cleaned_R2 as Request_Route_Of_Access_Cleaned,
+    Request_Route_Of_Access AS Request_Route_Of_Access_Raw,
+    Request_Route_Of_Access_Cleaned_R2 AS Request_Route_Of_Access_Cleaned,
 
-		Review_Outcomes_Achieved as Review_Outcomes_Achieved_Raw,
-		Review_Outcomes_Achieved_Cleaned_R2 as Review_Outcomes_Achieved_Cleaned,
+    Review_Outcomes_Achieved AS Review_Outcomes_Achieved_Raw,
+    Review_Outcomes_Achieved_Cleaned_R2 AS Review_Outcomes_Achieved_Cleaned,
 
-		Accommodation_Status as Accommodation_Status_Raw,
-		Accommodation_Status_Cleaned_R2 as Accommodation_Status_Cleaned,
+    Accommodation_Status AS Accommodation_Status_Raw,
+    Accommodation_Status_Cleaned_R2 AS Accommodation_Status_Cleaned,
 
-		Cost_Frequency_Unit_Type as Cost_Frequency_Unit_Type_Raw,
-		Cost_Frequency_Unit_Type_Cleaned_R2 as Cost_Frequency_Unit_Type_Cleaned,
+    Cost_Frequency_Unit_Type AS Cost_Frequency_Unit_Type_Raw,
+    Cost_Frequency_Unit_Type_Cleaned_R2 AS Cost_Frequency_Unit_Type_Cleaned,
 
-		Employment_Status as Employment_Status_Raw,
-		Employment_Status_Cleaned_R2 as Employment_Status_Cleaned,
+    Employment_Status AS Employment_Status_Raw,
+    Employment_Status_Cleaned_R2 AS Employment_Status_Cleaned,
 
-		Service_Component as Service_Component_Raw,
-		Service_Component_Cleaned_R2 as Service_Component_Cleaned,
+    Service_Component AS Service_Component_Raw,
+    Service_Component_Cleaned_R2 AS Service_Component_Cleaned,
 
-		Total_Hrs_Caring_Per_Week as Total_Hrs_Caring_Per_Week_Raw,
-		Total_Hrs_Caring_Per_Week_Cleaned_R2 as Total_Hrs_Caring_Per_Week_Cleaned,
+    Total_Hrs_Caring_Per_Week AS Total_Hrs_Caring_Per_Week_Raw,
+    Total_Hrs_Caring_Per_Week_Cleaned_R2 AS Total_Hrs_Caring_Per_Week_Cleaned,
 
-		Visual_Impairment as Visual_Impairment_Raw,
-		Visual_Impairment_Cleaned_R2 as Visual_Impairment_Cleaned
+    Visual_Impairment AS Visual_Impairment_Raw,
+    Visual_Impairment_Cleaned_R2 AS Visual_Impairment_Cleaned
 
+  INTO #OutputTable
 
-    into #OutputTable
-
-    from #Temp_der_age as d left join
-        ASC_Sandbox.REF_Client_Funding_Status_Mapping as cfs
-        on d.Client_Funding_Status = cfs.Client_Funding_Status_Raw left join
-        ASC_Sandbox.REF_Client_Type_Mapping as ct
-        on d.Client_Type = ct.Client_Type_Raw left join
-        ASC_Sandbox.REF_Delivery_Mechanism_Mapping as dm
-        on d.Delivery_Mechanism = dm.Delivery_Mechanism_Raw left join
-        ASC_Sandbox.REF_Assessment_Type_Mapping as aty
-        on d.Assessment_Type = aty.Assessment_Type_Raw left join 
-        ASC_Sandbox.REF_Hearing_Impairment_Mapping as hi
-        on d.Hearing_Impairment = hi.Hearing_Impairment_Raw left join
-        ASC_Sandbox.REF_Method_Of_Assessment_Mapping as moa
-        on d.Method_Of_Assessment = moa.Method_Of_Assessment_Raw left join
-        ASC_Sandbox.REF_Method_Of_Review_Mapping as mor
-        on d.Method_Of_Review = mor.Method_Of_Review_Raw left join
-        ASC_Sandbox.REF_Primary_Support_Reason_Mapping as psr
-        on d.Primary_Support_Reason = psr.Primary_Support_Reason_Raw left join
-        ASC_Sandbox.REF_Request_Route_of_Access_Mapping as rra
-        on d.Request_Route_Of_Access = rra.Request_Route_Of_Access_Raw left join
-        ASC_Sandbox.REF_Review_Outcomes_Achieved_Mapping as roa
-        on d.Review_Outcomes_Achieved = roa.Review_Outcomes_Achieved_Raw left join
-        ASC_Sandbox.REF_Accommodation_Status_Mapping as accom 
-        on d.Accommodation_Status = accom.Accommodation_Status_Raw left join
-        ASC_Sandbox.REF_Cost_Frequency_Mapping as cf
-        on d.Cost_Frequency_Unit_Type = cf.Cost_Frequency_Unit_Type_Raw left join
-        ASC_Sandbox.REF_Employment_Status_Mapping as es
-        on d.Employment_Status = es.Employment_Status_Raw left join
-        ASC_Sandbox.REF_Service_Component_Mapping as sc
-        on d.Service_Component = sc.Service_Component_Raw left join
-        ASC_Sandbox.REF_Total_Hrs_Caring_Per_Week_Mapping as tot 
-        on d.Total_Hrs_Caring_Per_Week = tot.Total_Hrs_Caring_Per_Week_Raw left join
-        ASC_Sandbox.REF_Visual_Impairment_Mapping as vi
-        on d.Visual_Impairment = vi.Visual_Impairment_Raw
+  FROM #DerivedAges AS d
+  LEFT JOIN ASC_Sandbox.REF_Client_Funding_Status_Mapping AS cfs
+  ON d.Client_Funding_Status = cfs.Client_Funding_Status_Raw
+  LEFT JOIN ASC_Sandbox.REF_Client_Type_Mapping AS ct
+  ON d.Client_Type = ct.Client_Type_Raw
+  LEFT JOIN ASC_Sandbox.REF_Delivery_Mechanism_Mapping AS dm
+  ON d.Delivery_Mechanism = dm.Delivery_Mechanism_Raw
+  LEFT JOIN ASC_Sandbox.REF_Assessment_Type_Mapping AS aty
+  ON d.Assessment_Type = aty.Assessment_Type_Raw
+  LEFT JOIN ASC_Sandbox.REF_Hearing_Impairment_Mapping AS hi
+  ON d.Hearing_Impairment = hi.Hearing_Impairment_Raw
+  LEFT JOIN ASC_Sandbox.REF_Method_Of_Assessment_Mapping AS moa
+  ON d.Method_Of_Assessment = moa.Method_Of_Assessment_Raw
+  LEFT JOIN ASC_Sandbox.REF_Method_Of_Review_Mapping AS mor
+  ON d.Method_Of_Review = mor.Method_Of_Review_Raw
+  LEFT JOIN ASC_Sandbox.REF_Primary_Support_Reason_Mapping AS psr
+  ON d.Primary_Support_Reason = psr.Primary_Support_Reason_Raw
+  LEFT JOIN ASC_Sandbox.REF_Request_Route_of_Access_Mapping AS rra
+  ON d.Request_Route_Of_Access = rra.Request_Route_Of_Access_Raw
+  LEFT JOIN ASC_Sandbox.REF_Review_Outcomes_Achieved_Mapping AS roa
+  ON d.Review_Outcomes_Achieved = roa.Review_Outcomes_Achieved_Raw
+  LEFT JOIN ASC_Sandbox.REF_Accommodation_Status_Mapping AS accom 
+  ON d.Accommodation_Status = accom.Accommodation_Status_Raw
+  LEFT JOIN ASC_Sandbox.REF_Cost_Frequency_Unit_Type_Mapping AS cf
+  ON d.Cost_Frequency_Unit_Type = cf.Cost_Frequency_Unit_Type_Raw
+  LEFT JOIN ASC_Sandbox.REF_Employment_Status_Mapping AS es
+  ON d.Employment_Status = es.Employment_Status_Raw
+  LEFT JOIN ASC_Sandbox.REF_Service_Component_Mapping AS sc
+  ON d.Service_Component = sc.Service_Component_Raw
+  LEFT JOIN ASC_Sandbox.REF_Total_Hrs_Caring_Per_Week_Mapping AS tot 
+  ON d.Total_Hrs_Caring_Per_Week = tot.Total_Hrs_Caring_Per_Week_Raw
+  LEFT JOIN ASC_Sandbox.REF_Visual_Impairment_Mapping AS vi
+  ON d.Visual_Impairment = vi.Visual_Impairment_Raw
    
-
-    -- Drop original [variable] to highlight copy named [variable]_raw and cleaned version [varaible]_cleaned 
-    alter table #OutputTable
-    drop column Client_Funding_Status, Client_Type, Delivery_Mechanism, Assessment_Type, Method_Of_Assessment, Method_Of_Review, Primary_Support_Reason, Request_Route_Of_Access, Review_Outcomes_Achieved, Accommodation_Status, Cost_Frequency_Unit_Type, Employment_Status, Service_Component, Total_Hrs_Caring_Per_Week, Visual_Impairment
+  -- Drop original fields to highlight "_Raw" / "_Cleaned" fields
+  ALTER TABLE #OutputTable
+  DROP COLUMN Client_Funding_Status, Client_Type, Delivery_Mechanism, Assessment_Type, Method_Of_Assessment, Method_Of_Review, Primary_Support_Reason, Request_Route_Of_Access, Review_Outcomes_Achieved, Accommodation_Status, Cost_Frequency_Unit_Type, Employment_Status, Service_Component, Total_Hrs_Caring_Per_Week, Visual_Impairment
 
   SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable'
 
@@ -330,200 +331,199 @@ AS
   -- Check for new invalid values (that need adding to mapping tables)
   ---------------------------------------------------------------------------
 
-SELECT DISTINCT Ethnicity_Raw INTO #InvalidEthnicities
-FROM #OutputTable
-WHERE NULLIF(Ethnicity_Raw, '') IS NOT NULL AND Ethnicity_Cleaned IS NULL;
+  SELECT DISTINCT Ethnicity_Raw INTO #InvalidEthnicities
+  FROM #OutputTable
+  WHERE NULLIF(Ethnicity_Raw, '') IS NOT NULL AND Ethnicity_Cleaned IS NULL;
 
-SELECT DISTINCT Service_Type_Raw INTO #InvalidServiceTypes
-FROM #OutputTable
-WHERE NULLIF(Service_Type_Raw, '') IS NOT NULL AND Service_Type_Cleaned IS NULL;
+  SELECT DISTINCT Service_Type_Raw INTO #InvalidServiceTypes
+  FROM #OutputTable
+  WHERE NULLIF(Service_Type_Raw, '') IS NOT NULL AND Service_Type_Cleaned IS NULL;
 
-SELECT DISTINCT Gender_Raw INTO #InvalidGenders
-FROM #OutputTable
-WHERE NULLIF(Gender_Raw, '') IS NOT NULL AND Gender_Cleaned IS NULL;
+  SELECT DISTINCT Gender_Raw INTO #InvalidGenders
+  FROM #OutputTable
+  WHERE NULLIF(Gender_Raw, '') IS NOT NULL AND Gender_Cleaned IS NULL;
 
-SELECT DISTINCT Event_Outcome_Raw INTO #InvalidEventOutcomes
-FROM #OutputTable
-WHERE NULLIF(Event_Outcome_Raw, '') IS NOT NULL AND Event_Outcome_Cleaned IS NULL;
+  SELECT DISTINCT Event_Outcome_Raw INTO #InvalidEventOutcomes
+  FROM #OutputTable
+  WHERE NULLIF(Event_Outcome_Raw, '') IS NOT NULL AND Event_Outcome_Cleaned IS NULL;
 
-SELECT DISTINCT Client_Funding_Status_Raw INTO #InvalidClientFundingStatus
-FROM #OutputTable
-WHERE NULLIF(Client_Funding_Status_Raw, '') IS NOT NULL AND Client_Funding_Status_Cleaned IS NULL;
+  SELECT DISTINCT Client_Funding_Status_Raw INTO #InvalidClientFundingStatus
+  FROM #OutputTable
+  WHERE NULLIF(Client_Funding_Status_Raw, '') IS NOT NULL AND Client_Funding_Status_Cleaned IS NULL;
 
-SELECT DISTINCT Client_Type_Raw INTO #InvalidClientType
-FROM #OutputTable
-WHERE NULLIF(Client_Type_Raw, '') IS NOT NULL AND Client_Type_Cleaned IS NULL;
+  SELECT DISTINCT Client_Type_Raw INTO #InvalidClientType
+  FROM #OutputTable
+  WHERE NULLIF(Client_Type_Raw, '') IS NOT NULL AND Client_Type_Cleaned IS NULL;
 
-SELECT DISTINCT Delivery_Mechanism_Raw INTO #InvalidDeliveryMechanism
-FROM #OutputTable
-WHERE NULLIF(Delivery_Mechanism_Raw, '') IS NOT NULL AND Delivery_Mechanism_Cleaned IS NULL;
+  SELECT DISTINCT Delivery_Mechanism_Raw INTO #InvalidDeliveryMechanism
+  FROM #OutputTable
+  WHERE NULLIF(Delivery_Mechanism_Raw, '') IS NOT NULL AND Delivery_Mechanism_Cleaned IS NULL;
 
-SELECT DISTINCT Assessment_Type_Raw INTO #InvalidAssessmentType
-FROM #OutputTable
-WHERE NULLIF(Assessment_Type_Raw, '') IS NOT NULL AND Assessment_Type_Cleaned IS NULL;
+  SELECT DISTINCT Assessment_Type_Raw INTO #InvalidAssessmentType
+  FROM #OutputTable
+  WHERE NULLIF(Assessment_Type_Raw, '') IS NOT NULL AND Assessment_Type_Cleaned IS NULL;
 
-SELECT DISTINCT Hearing_Impairment_Raw INTO #InvalidHearingImpairment
-FROM #OutputTable
-WHERE NULLIF(Hearing_Impairment_Raw, '') IS NOT NULL AND Hearing_Impairment_Cleaned IS NULL;
+  SELECT DISTINCT Hearing_Impairment_Raw INTO #InvalidHearingImpairment
+  FROM #OutputTable
+  WHERE NULLIF(Hearing_Impairment_Raw, '') IS NOT NULL AND Hearing_Impairment_Cleaned IS NULL;
 
-SELECT DISTINCT Method_of_Assessment_Raw INTO #InvalidMethodOfAssessment
-FROM #OutputTable
-WHERE NULLIF(Method_of_Assessment_Raw, '') IS NOT NULL AND Method_of_Assessment_Cleaned IS NULL;
+  SELECT DISTINCT Method_of_Assessment_Raw INTO #InvalidMethodOfAssessment
+  FROM #OutputTable
+  WHERE NULLIF(Method_of_Assessment_Raw, '') IS NOT NULL AND Method_of_Assessment_Cleaned IS NULL;
 
-SELECT DISTINCT Method_of_Review_Raw INTO #InvalidMethodOfReview
-FROM #OutputTable
-WHERE NULLIF(Method_of_Review_Raw, '') IS NOT NULL AND Method_of_Review_Cleaned IS NULL;
+  SELECT DISTINCT Method_of_Review_Raw INTO #InvalidMethodOfReview
+  FROM #OutputTable
+  WHERE NULLIF(Method_of_Review_Raw, '') IS NOT NULL AND Method_of_Review_Cleaned IS NULL;
 
-SELECT DISTINCT Primary_Support_Reason_Raw INTO #InvalidPrimarySupportReason
-FROM #OutputTable
-WHERE NULLIF(Primary_Support_Reason_Raw, '') IS NOT NULL AND Primary_Support_Reason_Cleaned IS NULL;
+  SELECT DISTINCT Primary_Support_Reason_Raw INTO #InvalidPrimarySupportReason
+  FROM #OutputTable
+  WHERE NULLIF(Primary_Support_Reason_Raw, '') IS NOT NULL AND Primary_Support_Reason_Cleaned IS NULL;
 
-SELECT DISTINCT Request_Route_Of_Access_Raw INTO #InvalidRequestRoute
-FROM #OutputTable
-WHERE NULLIF(Request_Route_Of_Access_Raw, '') IS NOT NULL AND Request_Route_Of_Access_Cleaned IS NULL;
+  SELECT DISTINCT Request_Route_Of_Access_Raw INTO #InvalidRequestRoute
+  FROM #OutputTable
+  WHERE NULLIF(Request_Route_Of_Access_Raw, '') IS NOT NULL AND Request_Route_Of_Access_Cleaned IS NULL;
 
-SELECT DISTINCT Review_Outcomes_Achieved_Raw INTO #InvalidReviewOutcomes
-FROM #OutputTable
-WHERE NULLIF(Review_Outcomes_Achieved_Raw, '') IS NOT NULL AND Review_Outcomes_Achieved_Cleaned IS NULL;
+  SELECT DISTINCT Review_Outcomes_Achieved_Raw INTO #InvalidReviewOutcomes
+  FROM #OutputTable
+  WHERE NULLIF(Review_Outcomes_Achieved_Raw, '') IS NOT NULL AND Review_Outcomes_Achieved_Cleaned IS NULL;
 
-SELECT DISTINCT Review_Reason_Raw INTO #InvalidReviewReason
-FROM #OutputTable
-WHERE NULLIF(Review_Reason_Raw, '') IS NOT NULL AND Review_Reason_Cleaned IS NULL;
+  SELECT DISTINCT Review_Reason_Raw INTO #InvalidReviewReason
+  FROM #OutputTable
+  WHERE NULLIF(Review_Reason_Raw, '') IS NOT NULL AND Review_Reason_Cleaned IS NULL;
 
-SELECT DISTINCT Accommodation_Status_Raw INTO #InvalidAccommodationStatus
-FROM #OutputTable
-WHERE NULLIF(Accommodation_Status_Raw, '') IS NOT NULL AND Accommodation_Status_Cleaned IS NULL;
+  SELECT DISTINCT Accommodation_Status_Raw INTO #InvalidAccommodationStatus
+  FROM #OutputTable
+  WHERE NULLIF(Accommodation_Status_Raw, '') IS NOT NULL AND Accommodation_Status_Cleaned IS NULL;
 
-SELECT DISTINCT Cost_Frequency_Unit_Type_Raw INTO #InvalidCostFrequency
-FROM #OutputTable
-WHERE NULLIF(Cost_Frequency_Unit_Type_Raw, '') IS NOT NULL AND Cost_Frequency_Unit_Type_Cleaned IS NULL;
+  SELECT DISTINCT Cost_Frequency_Unit_Type_Raw INTO #InvalidCostFrequency
+  FROM #OutputTable
+  WHERE NULLIF(Cost_Frequency_Unit_Type_Raw, '') IS NOT NULL AND Cost_Frequency_Unit_Type_Cleaned IS NULL;
 
-SELECT DISTINCT Employment_Status_Raw INTO #InvalidEmploymentStatus
-FROM #OutputTable
-WHERE NULLIF(Employment_Status_Raw, '') IS NOT NULL AND Employment_Status_Cleaned IS NULL;
+  SELECT DISTINCT Employment_Status_Raw INTO #InvalidEmploymentStatus
+  FROM #OutputTable
+  WHERE NULLIF(Employment_Status_Raw, '') IS NOT NULL AND Employment_Status_Cleaned IS NULL;
 
-SELECT DISTINCT Service_Component_Raw INTO #InvalidServiceComponent
-FROM #OutputTable
-WHERE NULLIF(Service_Component_Raw, '') IS NOT NULL AND Service_Component_Cleaned IS NULL;
+  SELECT DISTINCT Service_Component_Raw INTO #InvalidServiceComponent
+  FROM #OutputTable
+  WHERE NULLIF(Service_Component_Raw, '') IS NOT NULL AND Service_Component_Cleaned IS NULL;
 
-SELECT DISTINCT Total_Hrs_Caring_Per_Week_Raw INTO #InvalidCaringHours
-FROM #OutputTable
-WHERE NULLIF(Total_Hrs_Caring_Per_Week_Raw, '') IS NOT NULL AND Total_Hrs_Caring_Per_Week_Cleaned IS NULL;
+  SELECT DISTINCT Total_Hrs_Caring_Per_Week_Raw INTO #InvalidCaringHours
+  FROM #OutputTable
+  WHERE NULLIF(Total_Hrs_Caring_Per_Week_Raw, '') IS NOT NULL AND Total_Hrs_Caring_Per_Week_Cleaned IS NULL;
 
-SELECT DISTINCT Visual_Impairment_Raw INTO #InvalidVisualImpairment
-FROM #OutputTable
-WHERE NULLIF(Visual_Impairment_Raw, '') IS NOT NULL AND Visual_Impairment_Cleaned IS NULL;
+  SELECT DISTINCT Visual_Impairment_Raw INTO #InvalidVisualImpairment
+  FROM #OutputTable
+  WHERE NULLIF(Visual_Impairment_Raw, '') IS NOT NULL AND Visual_Impairment_Cleaned IS NULL;
 
--- Reporting
-IF EXISTS (SELECT * FROM #InvalidGenders)
-   OR EXISTS (SELECT * FROM #InvalidEthnicities)
-   OR EXISTS (SELECT * FROM #InvalidServiceTypes)
-   OR EXISTS (SELECT * FROM #InvalidEventOutcomes)
-   OR EXISTS (SELECT * FROM #InvalidClientFundingStatus)
-   OR EXISTS (SELECT * FROM #InvalidClientType)
-   OR EXISTS (SELECT * FROM #InvalidDeliveryMechanism)
-   OR EXISTS (SELECT * FROM #InvalidAssessmentType)
-   OR EXISTS (SELECT * FROM #InvalidHearingImpairment)
-   OR EXISTS (SELECT * FROM #InvalidMethodOfAssessment)
-   OR EXISTS (SELECT * FROM #InvalidMethodOfReview)
-   OR EXISTS (SELECT * FROM #InvalidPrimarySupportReason)
-   OR EXISTS (SELECT * FROM #InvalidRequestRoute)
-   OR EXISTS (SELECT * FROM #InvalidReviewOutcomes)
-   OR EXISTS (SELECT * FROM #InvalidReviewReason)
-   OR EXISTS (SELECT * FROM #InvalidAccommodationStatus)
-   OR EXISTS (SELECT * FROM #InvalidCostFrequency)
-   OR EXISTS (SELECT * FROM #InvalidEmploymentStatus)
-   OR EXISTS (SELECT * FROM #InvalidServiceComponent)
-   OR EXISTS (SELECT * FROM #InvalidCaringHours)
-   OR EXISTS (SELECT * FROM #InvalidVisualImpairment)
-BEGIN
+  IF EXISTS (SELECT * FROM #InvalidGenders)
+     OR EXISTS (SELECT * FROM #InvalidEthnicities)
+     OR EXISTS (SELECT * FROM #InvalidServiceTypes)
+     OR EXISTS (SELECT * FROM #InvalidEventOutcomes)
+     OR EXISTS (SELECT * FROM #InvalidClientFundingStatus)
+     OR EXISTS (SELECT * FROM #InvalidClientType)
+     OR EXISTS (SELECT * FROM #InvalidDeliveryMechanism)
+     OR EXISTS (SELECT * FROM #InvalidAssessmentType)
+     OR EXISTS (SELECT * FROM #InvalidHearingImpairment)
+     OR EXISTS (SELECT * FROM #InvalidMethodOfAssessment)
+     OR EXISTS (SELECT * FROM #InvalidMethodOfReview)
+     OR EXISTS (SELECT * FROM #InvalidPrimarySupportReason)
+     OR EXISTS (SELECT * FROM #InvalidRequestRoute)
+     OR EXISTS (SELECT * FROM #InvalidReviewOutcomes)
+     OR EXISTS (SELECT * FROM #InvalidReviewReason)
+     OR EXISTS (SELECT * FROM #InvalidAccommodationStatus)
+     OR EXISTS (SELECT * FROM #InvalidCostFrequency)
+     OR EXISTS (SELECT * FROM #InvalidEmploymentStatus)
+     OR EXISTS (SELECT * FROM #InvalidServiceComponent)
+     OR EXISTS (SELECT * FROM #InvalidCaringHours)
+     OR EXISTS (SELECT * FROM #InvalidVisualImpairment)
+  BEGIN
     
     IF EXISTS (SELECT * FROM #InvalidGenders)
-        SELECT Gender_Raw AS 'NEW INVALID GENDERS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidGenders ORDER BY Gender_Raw;
+      SELECT Gender_Raw AS 'NEW INVALID GENDERS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidGenders ORDER BY Gender_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidEthnicities)
-        SELECT Ethnicity_Raw AS 'NEW INVALID ETHNICITIES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidEthnicities ORDER BY Ethnicity_Raw;
+      SELECT Ethnicity_Raw AS 'NEW INVALID ETHNICITIES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidEthnicities ORDER BY Ethnicity_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidServiceTypes)
-        SELECT Service_Type_Raw AS 'NEW INVALID SERVICE TYPES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidServiceTypes ORDER BY Service_Type_Raw;
+      SELECT Service_Type_Raw AS 'NEW INVALID SERVICE TYPES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidServiceTypes ORDER BY Service_Type_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidEventOutcomes)
-        SELECT Event_Outcome_Raw AS 'NEW INVALID EVENT OUTCOMES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidEventOutcomes ORDER BY Event_Outcome_Raw;
+      SELECT Event_Outcome_Raw AS 'NEW INVALID EVENT OUTCOMES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidEventOutcomes ORDER BY Event_Outcome_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidClientFundingStatus)
-        SELECT Client_Funding_Status_Raw AS 'NEW INVALID CLIENT FUNDING STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidClientFundingStatus ORDER BY Client_Funding_Status_Raw;
+      SELECT Client_Funding_Status_Raw AS 'NEW INVALID CLIENT FUNDING STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidClientFundingStatus ORDER BY Client_Funding_Status_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidClientType)
-        SELECT Client_Type_Raw AS 'NEW INVALID CLIENT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidClientType ORDER BY Client_Type_Raw;
+      SELECT Client_Type_Raw AS 'NEW INVALID CLIENT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidClientType ORDER BY Client_Type_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidDeliveryMechanism)
-        SELECT Delivery_Mechanism_Raw AS 'NEW INVALID DELIVERY MECHANISM FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidDeliveryMechanism ORDER BY Delivery_Mechanism_Raw;
+      SELECT Delivery_Mechanism_Raw AS 'NEW INVALID DELIVERY MECHANISM FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidDeliveryMechanism ORDER BY Delivery_Mechanism_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidAssessmentType)
-        SELECT Assessment_Type_Raw AS 'NEW INVALID ASSESSMENT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidAssessmentType ORDER BY Assessment_Type_Raw;
+      SELECT Assessment_Type_Raw AS 'NEW INVALID ASSESSMENT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidAssessmentType ORDER BY Assessment_Type_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidHearingImpairment)
-        SELECT Hearing_Impairment_Raw AS 'NEW INVALID HEARING IMPAIRMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidHearingImpairment ORDER BY Hearing_Impairment_Raw;
+      SELECT Hearing_Impairment_Raw AS 'NEW INVALID HEARING IMPAIRMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidHearingImpairment ORDER BY Hearing_Impairment_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidMethodOfAssessment)
-        SELECT Method_of_Assessment_Raw AS 'NEW INVALID METHOD OF ASSESSMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidMethodOfAssessment ORDER BY Method_of_Assessment_Raw;
+      SELECT Method_of_Assessment_Raw AS 'NEW INVALID METHOD OF ASSESSMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidMethodOfAssessment ORDER BY Method_of_Assessment_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidMethodOfReview)
-        SELECT Method_of_Review_Raw AS 'NEW INVALID METHOD OF REVIEW FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidMethodOfReview ORDER BY Method_of_Review_Raw;
+      SELECT Method_of_Review_Raw AS 'NEW INVALID METHOD OF REVIEW FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidMethodOfReview ORDER BY Method_of_Review_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidPrimarySupportReason)
-        SELECT Primary_Support_Reason_Raw AS 'NEW INVALID PRIMARY SUPPORT REASON FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidPrimarySupportReason ORDER BY Primary_Support_Reason_Raw;
+      SELECT Primary_Support_Reason_Raw AS 'NEW INVALID PRIMARY SUPPORT REASON FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidPrimarySupportReason ORDER BY Primary_Support_Reason_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidRequestRoute)
-        SELECT Request_Route_Of_Access_Raw AS 'NEW INVALID REQUEST ROUTE OF ACCESS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidRequestRoute ORDER BY Request_Route_Of_Access_Raw;
+      SELECT Request_Route_Of_Access_Raw AS 'NEW INVALID REQUEST ROUTE OF ACCESS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidRequestRoute ORDER BY Request_Route_Of_Access_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidReviewOutcomes)
-        SELECT Review_Outcomes_Achieved_Raw AS 'NEW INVALID REVIEW OUTCOMES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidReviewOutcomes ORDER BY Review_Outcomes_Achieved_Raw;
+      SELECT Review_Outcomes_Achieved_Raw AS 'NEW INVALID REVIEW OUTCOMES FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidReviewOutcomes ORDER BY Review_Outcomes_Achieved_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidReviewReason)
-        SELECT Review_Reason_Raw AS 'NEW INVALID REVIEW REASON FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidReviewReason ORDER BY Review_Reason_Raw;
+      SELECT Review_Reason_Raw AS 'NEW INVALID REVIEW REASON FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidReviewReason ORDER BY Review_Reason_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidAccommodationStatus)
-        SELECT Accommodation_Status_Raw AS 'NEW INVALID ACCOMMODATION STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidAccommodationStatus ORDER BY Accommodation_Status_Raw;
+      SELECT Accommodation_Status_Raw AS 'NEW INVALID ACCOMMODATION STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidAccommodationStatus ORDER BY Accommodation_Status_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidCostFrequency)
-        SELECT Cost_Frequency_Unit_Type_Raw AS 'NEW INVALID COST FREQUENCY UNIT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidCostFrequency ORDER BY Cost_Frequency_Unit_Type_Raw;
+      SELECT Cost_Frequency_Unit_Type_Raw AS 'NEW INVALID COST FREQUENCY UNIT TYPE FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidCostFrequency ORDER BY Cost_Frequency_Unit_Type_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidEmploymentStatus)
-        SELECT Employment_Status_Raw AS 'NEW INVALID EMPLOYMENT STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidEmploymentStatus ORDER BY Employment_Status_Raw;
+      SELECT Employment_Status_Raw AS 'NEW INVALID EMPLOYMENT STATUS FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidEmploymentStatus ORDER BY Employment_Status_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidServiceComponent)
-        SELECT Service_Component_Raw AS 'NEW INVALID SERVICE COMPONENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidServiceComponent ORDER BY Service_Component_Raw;
+      SELECT Service_Component_Raw AS 'NEW INVALID SERVICE COMPONENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidServiceComponent ORDER BY Service_Component_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidCaringHours)
-        SELECT Total_Hrs_Caring_Per_Week_Raw AS 'NEW INVALID TOTAL HOURS CARING PER WEEK FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidCaringHours ORDER BY Total_Hrs_Caring_Per_Week_Raw;
+      SELECT Total_Hrs_Caring_Per_Week_Raw AS 'NEW INVALID TOTAL HOURS CARING PER WEEK FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidCaringHours ORDER BY Total_Hrs_Caring_Per_Week_Raw;
 
     IF EXISTS (SELECT * FROM #InvalidVisualImpairment)
-        SELECT Visual_Impairment_Raw AS 'NEW INVALID VISUAL IMPAIRMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
-        FROM #InvalidVisualImpairment ORDER BY Visual_Impairment_Raw;
-	
-	RETURN
-	END;
+      SELECT Visual_Impairment_Raw AS 'NEW INVALID VISUAL IMPAIRMENT FOUND - add to data field mapping xlsx, re-write REF_ table and re-run GetDerivedFields:'
+      FROM #InvalidVisualImpairment ORDER BY Visual_Impairment_Raw;
+  
+    RETURN
+  END;
 
 GO
 

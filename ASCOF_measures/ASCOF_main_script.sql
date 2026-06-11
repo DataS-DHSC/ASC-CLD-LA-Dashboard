@@ -23,10 +23,10 @@ ASCOF 2D follows the same approach but has a 3 month lag on the reporting period
 
 /*
 EXEC ASC_Sandbox.Create_person_details_table
-  @ReportingPeriodStartDate = '2025-01-01',  --<<<<<<<<<< UPDATE
-  @ReportingPeriodEndDate = '2025-12-31',    --<<<<<<<<<< UPDATE
-  @InputTable = 'ASC_Sandbox.CLD_230401_251231_JoinedSubmissions', --use joined submissions table   --<<<<<<<<<< UPDATE
-  @OutputTable = 'ASC_Sandbox.CLD_230401_251231_JoinedSubmissions_Latest_Person_Data'               --<<<<<<<<<< UPDATE
+  @ReportingPeriodStartDate = '2025-04-01',  --<<<<<<<<<< UPDATE
+  @ReportingPeriodEndDate = '2026-03-31',    --<<<<<<<<<< UPDATE
+  @InputTable = 'DHSC_Reporting.CLD_230401_260331_JoinedSubmissions', --use joined submissions table   --<<<<<<<<<< UPDATE
+  @OutputTable = 'ASC_Sandbox.CLD_230401_260331_JoinedSubmissions_Latest_Person_Data'               --<<<<<<<<<< UPDATE
   */
 
 
@@ -53,7 +53,7 @@ SELECT DISTINCT
   Discharge_Destination,
   Der_Management_Type,
   Treatment_Function_Code
-INTO ASC_Sandbox.ASCOF2D_SUS_260216   --<<<<<<<<<< UPDATE
+INTO ASC_Sandbox.ASCOF2D_SUS_260602   --<<<<<<<<<< UPDATE
 FROM DHSC_SUS.APCE
 WHERE Discharge_Date BETWEEN '2023-04-01' AND CAST(GETDATE() AS DATE);
 */
@@ -63,10 +63,10 @@ WHERE Discharge_Date BETWEEN '2023-04-01' AND CAST(GETDATE() AS DATE);
 -- Set global parameters for producing ASCOF
 -- ===================================================== 
 --Latest statistical reporting period
-DECLARE @LatestStartDate DATE = '2025-01-01';    --<<<<<<<<<< UPDATE
-DECLARE @LatestEndDate   DATE = '2025-12-31';    --<<<<<<<<<< UPDATE
-DECLARE @InputTable SYSNAME = CONCAT('ASC_Sandbox.CLD_230401_', CONVERT(char(6), @LatestEndDate, 12), '_JoinedSubmissions');
-DECLARE @PersonDetailsTable SYSNAME = CONCAT(@InputTable, '_Latest_Person_Data')
+DECLARE @LatestStartDate DATE = '2025-04-01';    --<<<<<<<<<< UPDATE
+DECLARE @LatestEndDate   DATE = '2026-03-31';    --<<<<<<<<<< UPDATE
+DECLARE @InputTable SYSNAME = CONCAT('DHSC_Reporting.CLD_230401_', CONVERT(char(6), @LatestEndDate, 12), '_JoinedSubmissions');
+DECLARE @PersonDetailsTable SYSNAME = CONCAT('ASC_Sandbox.CLD_230401_', CONVERT(char(6), @LatestEndDate, 12), '_JoinedSubmissions_Latest_Person_Data');
 
 -- Previous statistical reporting period
 DECLARE @PreviousStartDate DATE = DATEADD(MONTH, -3, @LatestStartDate);
@@ -77,7 +77,7 @@ DECLARE @2D_LatestStartDate DATE = @PreviousStartDate
 DECLARE @2D_LatestEndDate DATE = @PreviousEndDate
 DECLARE @2D_PreviousStartDate DATE = DATEADD(MONTH, -3, @PreviousStartDate)
 DECLARE @2D_PreviousEndDate DATE = DATEADD(MONTH, -3, @PreviousEndDate)
-DECLARE @SUS_InputData SYSNAME = 'ASC_Sandbox.ASCOF2D_SUS_260216'   --<<<<<<<<<< UPDATE
+DECLARE @SUS_InputData SYSNAME = 'ASC_Sandbox.ASCOF2D_SUS_260602'   --<<<<<<<<<< UPDATE
 
 -- ============================================================
 -- Output latest figures and revise one previous set of figures
@@ -353,9 +353,7 @@ SELECT *
 FROM ASC_Sandbox.ASCOF_2A_Disaggregated_Latest
 
 
--- 2C Figures for BCF dashboard page
-DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_BCF
-
+DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_2C_BCF
 SELECT
   a.*,
   CASE 
@@ -367,12 +365,32 @@ SELECT
     ELSE a.Denominator 
   END AS Denominator_Supressed,
   b.Region
-INTO ASC_Sandbox.LA_PBI_ASCOF_BCF
+INTO ASC_Sandbox.LA_PBI_ASCOF_2C_BCF
 FROM ASC_Sandbox.LA_PBI_ASCOF a
 LEFT JOIN ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup b
 ON a.LA_Code = b.LA_Code
 WHERE Measure = 'ASCOF 2C'
 AND Reporting_Period <> '1 Apr 23 - 31 Mar 24'  --Exclude first year
+
+-- 2D part 1 for BCF Dashboard page
+DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_2D_P1_BCF
+SELECT b.LA_Code, b.Region, a.*
+INTO ASC_Sandbox.LA_PBI_ASCOF_2D_P1_BCF
+FROM ASC_Sandbox.ASCOF2D_Part1_Metrics a
+LEFT JOIN ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup b
+ON a.Area = b.LA_Name
+WHERE Reporting_Period <> '1 Apr 23 - 31 Mar 24'
+
+
+-- 2D part 2 for BCF Dashboard page
+DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_ASCOF_2D_P2_BCF
+SELECT b.LA_Code, b.Region, a.*
+INTO ASC_Sandbox.LA_PBI_ASCOF_2D_P2_BCF
+FROM ASC_Sandbox.ASCOF2D_Part2_Metrics a
+LEFT JOIN ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup b
+ON a.Area = b.LA_Name
+WHERE Reporting_Period <> '1 Apr 23 - 31 Mar 24'
+
 
 --ASCOF 2D Part 1 metrics demographic breakdown
 DROP TABLE IF EXISTS ASC_Sandbox.ASCOF2D_Part1_Metrics_Demographic_Breakdown

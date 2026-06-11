@@ -1,8 +1,9 @@
 ---------------------------------------------------------------------------
 -- Create ref table of submission stated and derived reporting periods
+-- NB - SCHEDULED AS PART OF AGEM PIPELINE (i.e. should not need to run)
 --
 -- Derives reporting period using events ending per month - see below for
--- detail. NB intend to schedule this script to be run in AGEM pipeline.
+-- detail.
 ---------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS ASC_Sandbox.REF_Submission_Reporting_Periods;
@@ -13,27 +14,29 @@ DECLARE @Min_pct AS INT = 2;
 WITH Events_Ending_by_Month AS (
 
   SELECT
+    LA_Code,
     LA_Name,
     ImportDate,
     DATEFROMPARTS(YEAR(Event_End_Date), MONTH(Event_End_Date), 1) AS 'Month',
     COUNT(DISTINCT Event_Type) AS n_Event_Types_in_Month,
     COUNT(*) AS n_End_Dates_in_Month
-  FROM DHSC_ASC.CLD_R1_Raw
+  FROM DHSC_ASC.CLD_Raw
   WHERE Event_End_Date < DATEFROMPARTS(YEAR(ImportDate), MONTH(ImportDate), 1)
-  GROUP BY LA_Name, ImportDate, DATEFROMPARTS(YEAR(Event_End_Date), MONTH(Event_End_Date), 1)
+  GROUP BY LA_Code, LA_Name, ImportDate, DATEFROMPARTS(YEAR(Event_End_Date), MONTH(Event_End_Date), 1)
 
 )
 
 SELECT
   a.*,
-  DATEDIFF(MONTH, Reporting_Period_Start_Date, DATEADD(DAY, 1, Reporting_Period_End_Date)) AS Reporting_Period_Length,
+  CAST(ROUND(DATEDIFF(DAY, Reporting_Period_Start_Date, Reporting_Period_End_Date) / 30.436875, 0) AS INT) AS Reporting_Period_Length,
   Der_Reporting_Period_Start_Date,
   Der_Reporting_Period_End_Date,
-  DATEDIFF(MONTH, Der_Reporting_Period_Start_Date, DATEADD(DAY, 1, Der_Reporting_Period_End_Date)) AS Der_Reporting_Period_Length
+  CAST(ROUND(DATEDIFF(DAY, Der_Reporting_Period_Start_Date, Der_Reporting_Period_End_Date) / 30.436875, 0) AS INT) AS Der_Reporting_Period_Length
 INTO ASC_Sandbox.REF_Submission_Reporting_Periods
 FROM (
 
   SELECT
+    LA_Code,
     LA_Name,
     ImportDate,
     ------------------------------------------------------------------------------------
@@ -42,13 +45,14 @@ FROM (
     COUNT(DISTINCT CONCAT(Reporting_Period_Start_Date, Reporting_Period_End_Date)) AS n_Reporting_Periods,
     MIN(Reporting_Period_Start_Date) AS Reporting_Period_Start_Date,
     MAX(Reporting_Period_End_Date) AS Reporting_Period_End_Date
-  FROM DHSC_ASC.CLD_R1_Raw
-  GROUP BY LA_Name, ImportDate
+  FROM DHSC_ASC.CLD_Raw
+  GROUP BY LA_Code, LA_Name, ImportDate
 
   ) a
 LEFT JOIN (
 
   SELECT
+    f.LA_Code,
     f.LA_Name,
     f.ImportDate,
     ------------------------------------------------------------------------------------
@@ -73,15 +77,16 @@ LEFT JOIN (
   FROM Events_Ending_by_Month m
   LEFT JOIN (
     SELECT
+      LA_Code,
       LA_Name,
       ImportDate,
       MAX(n_Event_Types_in_Month) AS n_Event_Types_in_File,
       SUM(n_End_Dates_in_Month) AS n_End_Dates_in_File
     FROM Events_Ending_by_Month
-    GROUP BY LA_Name, ImportDate
+    GROUP BY LA_Code, LA_Name, ImportDate
   ) f
-  ON m.LA_Name = f.LA_Name AND m.ImportDate = f.ImportDate
-  GROUP BY f.LA_Name, f.ImportDate
+  ON m.LA_Code = f.LA_Code AND m.LA_Name = f.LA_Name AND m.ImportDate = f.ImportDate
+  GROUP BY f.LA_Code, f.LA_Name, f.ImportDate
 
 ) b
-ON a.LA_Name = b.LA_Name AND a.ImportDate = b.ImportDate
+ON a.LA_Code = b.LA_Code AND a.LA_Name = b.LA_Name AND a.ImportDate = b.ImportDate

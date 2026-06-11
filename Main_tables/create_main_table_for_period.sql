@@ -12,32 +12,14 @@
 -- Amend reporting period below:
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01';
-DECLARE @ReportingPeriodEndDate AS DATE = '2025-12-31';
+DECLARE @ReportingPeriodEndDate AS DATE = '2026-03-31';
 
 -- Set "as of" (cut-off) date to select submissions below:
-
--- Select submissions as of last day of submission window following end of reporting period
---DECLARE @SubmissionsAsOfDate AS DATE = DATEADD(day, -1, DATEADD(month, 1, DATEADD(day, 1, @ReportingPeriodEndDate)));
--- Select submission as of manually-specified date, when all LA submissions received and main DQ issues resolved:
-DECLARE @SubmissionsAsOfDate AS DATE = '2026-02-11';
+DECLARE @SubmissionsAsOfDate AS DATE = '2026-05-05';
 
 ---------------------------------------------------------------------------
 
 SET NOCOUNT ON; -- Hides "(X rows affected)" messages
-
--- Exit if submission reporting period reference table is not up to date
--- ** No longer required as ref table now created in AGEM pipeline **
-
---DECLARE @MaxREFImportDate AS DATE = (SELECT CONVERT(DATE, MAX(ImportDate)) FROM ASC_Sandbox.REF_Submission_Reporting_Periods);
-
---IF EXISTS (SELECT * FROM DHSC_ASC.CLD_R1_Raw WHERE CONVERT(DATE, ImportDate) > @MaxREFImportDate AND CONVERT(DATE, ImportDate) <= @SubmissionsAsOfDate)
---BEGIN
---  PRINT 'EXITING. ASC_Sandbox.REF_Submission_Reporting_Periods must be updated before this script can be run.';
---  RETURN
---END
-
---ELSE
---  PRINT CONCAT('Creating main deduplicated CLD table covering ', @ReportingPeriodStartDate, ' to ', @ReportingPeriodEndDate, ' as of ', @SubmissionsAsOfDate);
 
 ---------------------------------------------------------------------------
 -- 1. Get submissions covering the period
@@ -139,7 +121,7 @@ FROM (
   FROM #Submissions
   GROUP BY LA_Name, ImportDate
 ) t1
-LEFT JOIN DHSC_ASC.CLD_R1_Raw t2
+LEFT JOIN DHSC_ASC.CLD_Raw t2
 ON t1.LA_Name = t2.LA_Name AND t1.ImportDate = t2.ImportDate;
 
 IF EXISTS (SELECT * FROM ASC_Sandbox.Temp_JoinedSubs_RawSubmissions)
@@ -191,42 +173,32 @@ BEGIN
 END;
 
 ---------------------------------------------------------------------------
--- 6. Write output table and drop temporary tables
+-- 6. Write output table 
 ---------------------------------------------------------------------------
 
+-- Create output table name and write final output to sandbox
+-- NB if table already exists this will fail
+DECLARE @TableName AS VARCHAR(256) = CONCAT('CLD_',
+                                             FORMAT((SELECT MIN(Ref_Period_Start_Date) FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents), 'yyMMdd'),
+                                             '_',
+                                             FORMAT((SELECT MAX(Ref_Period_End_Date) FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents), 'yyMMdd'),
+                                             '_JoinedSubmissions');
+
+DECLARE @Query NVARCHAR(MAX);
+SET @Query = 'SELECT *
+              INTO ASC_Sandbox.' + @TableName + ' 
+              FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;';
+EXEC(@Query);
+
 PRINT '' ;
-PRINT 'Please now sense check ASC_Sandbox.Temp_JoinedSubs_UniqueEvents';
-PRINT 'then uncomment and run section 6 to create final output and clean up.';
+PRINT 'Please now run quarto main table QA script to sense check table created';
+PRINT 'then uncomment and run section 7 to drop "Temp_JoinedSubs" tables.';
 
--- Uncomment and run the following code when Temp_ outputs are QAd.
--- Recommended minimum QA:
--- - Sense check row counts by LA (lowest row counts should be for Isles of
---   Scilly, City of London and Rutland, in that order)
--- - Sense check completeness of each column
---
--- Ultimately, further QA steps want building into this script as unit tests
--- where possible and a separate (python/R) script developing that produces
--- summary charts for sense checking.
-
----- Create output table name and write final output to sandbox
---DECLARE @TableName AS VARCHAR(256) = CONCAT('CLD_',
---                                             FORMAT((SELECT MIN(Ref_Period_Start_Date) FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents), 'yyMMdd'),
---                                             '_',
---                                             FORMAT((SELECT MAX(Ref_Period_End_Date) FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents), 'yyMMdd'),
---                                             '_JoinedSubmissions');
-
---DECLARE @Query NVARCHAR(MAX);
---SET @Query = 'DROP TABLE IF EXISTS ASC_Sandbox.' + @TableName + ';
-              
---              SELECT *
---              INTO ASC_Sandbox.' + @TableName + ' 
---              FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;';
---EXEC(@Query);
-
--- Drop temporary tables
+---------------------------------------------------------------------------
+-- 7. Drop temporary tables
+---------------------------------------------------------------------------
 
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_RawSubmissions;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_DerivedFields;
---DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_RankedRecords;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;
