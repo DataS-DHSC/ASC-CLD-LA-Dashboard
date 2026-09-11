@@ -1,6 +1,6 @@
 # Selecting submissions to cover the period
 
-> Processing steps applied in [`GetSubmissions`](/Main_tables/stored_procedures/create_GetSubmissions_procedure.sql) procedure.
+> Processing steps applied in [`GetSubmissions`](/Main_tables/stored_procedures/create_GetSubmissionsV2_procedure.sql) procedure.
 
 [Back to Overview](/Main_tables/docs/methodology/0-overview.md)
 
