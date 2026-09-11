@@ -24,7 +24,7 @@ SELECT
   ,Event_End_Date
   ,Event_Outcome
   ,Event_Outcome_Grouped
-  ,Date_of_Death
+  ,Der_Date_of_Death
   ,Service_Type
   ,Service_Type_Grouped
   ,Service_Component

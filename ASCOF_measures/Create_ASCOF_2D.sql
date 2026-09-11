@@ -72,7 +72,7 @@ AS
       DROP TABLE IF EXISTS ASC_Sandbox.ASCOF_2D_CLD_Cleaned
       SELECT 
         a.*,
-        b.Date_of_Death as DOD_Latest
+        b.Der_Date_of_Death as DOD_Latest
       INTO ASC_Sandbox.ASCOF_2D_CLD_Cleaned
       FROM ASC_Sandbox.InputTable a
       LEFT JOIN #CLD_Latest_Person_Details b
@@ -81,7 +81,7 @@ AS
       WHERE 
         Client_Type_Cleaned = 'Service User'
         -- Exclude people who died before the start of the reporting period
-        AND (b.Date_of_Death >= @ReportingPeriodStartDate OR b.Date_of_Death IS NULL) 
+        AND (b.Der_Date_of_Death >= @ReportingPeriodStartDate OR b.Der_Date_of_Death IS NULL) 
         -- Event must either have a valid end date after start or be ongoing (null end date)
         AND (Der_Event_End_Date >= Event_Start_Date OR Der_Event_End_Date IS NULL) 
         AND a.Der_NHS_LA_Combined_Person_ID IS NOT NULL
@@ -111,7 +111,7 @@ AS
       SELECT *
       INTO #Reablement_events
       FROM ASC_Sandbox.ASCOF_2D_CLD_Cleaned
-      WHERE Event_Type = 'service'
+      WHERE Event_Type_Cleaned = 'service'
         AND Service_Type_Cleaned = 'Short Term Support: ST-Max'
 	      AND Service_Component_Cleaned LIKE 'Reablement'
 

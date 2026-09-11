@@ -29,7 +29,8 @@ CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2A_2425_Onwards
   @InputTable AS NVARCHAR(100),
   @InputTable_PersonDetails AS NVARCHAR(100),
   @OutputTable AS NVARCHAR(100),
-  @OutputTable_Disaggregated AS NVARCHAR(100)
+  @OutputTable_Disaggregated AS NVARCHAR(100),
+  @OutputTable_RLS AS NVARCHAR(100)
 
 AS
   
@@ -40,6 +41,7 @@ AS
 
   SET @Query =  N'DROP TABLE IF EXISTS ' + @OutputTable + '; 
                  DROP TABLE IF EXISTS ' + @OutputTable_Disaggregated + '; 
+                 DROP TABLE IF EXISTS ' + @OutputTable_RLS + ';
                  CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable + ';
                  CREATE SYNONYM ASC_Sandbox.InputTable_PersonDetails FOR ' + @InputTable_PersonDetails +';'
   EXEC(@Query)
@@ -100,7 +102,7 @@ AS
           a.LA_Code,
           a.LA_Name,
           a.Client_Type_Cleaned AS Client_Type,
-          a.Event_Type,
+          a.Event_Type_Cleaned AS Event_Type,
           a.Event_Start_Date,
           a.Der_Event_End_Date,
           a.Service_Type_Cleaned AS Service_Type,
@@ -260,7 +262,7 @@ AS
           a.ST_Max_Cluster_End,
           a.ST_Max_Cluster_Event_Outcome,
           a.ST_Max_Cluster_Event_Outcome_Hierarchy,
-          c.Date_of_Death,
+          c.Der_Date_of_Death,
           CASE 
             WHEN FLOOR(DATEDIFF(DAY, c.Der_Birth_Date, a.ST_Max_Cluster_End) / 365.25) < 18 THEN 'Under 18' -- Under 18s filtered out below
             WHEN FLOOR(DATEDIFF(DAY, c.Der_Birth_Date, a.ST_Max_Cluster_End) / 365.25) BETWEEN 18 AND 64 THEN '18 to 64'
@@ -287,7 +289,7 @@ AS
         -- Exclude under 18s but include unknown ages. 
         -- Exclude people who died before cluster start date.
         WHERE (FLOOR(DATEDIFF(DAY, c.Der_Birth_Date, a.ST_Max_Cluster_End) / 365.25) >= 18 OR c.Der_Birth_Date IS NULL) AND
-              (c.Date_of_Death >= a.ST_Max_Cluster_Start OR c.Date_of_Death IS NULL)
+              (c.Der_Date_of_Death >= a.ST_Max_Cluster_Start OR c.Der_Date_of_Death IS NULL)
 
 
         --2. Set fields to null where ST-Max joins onto itself
@@ -433,7 +435,7 @@ AS
           '1' as 'Sequel_Type',
           ST_Max_Cluster_Working_Age_Band
         FROM #ST_MAX_New_Clients_Final
-        WHERE DATEDIFF(DAY, ST_Max_Cluster_End, Date_of_Death) <= 7
+        WHERE DATEDIFF(DAY, ST_Max_Cluster_End, Der_Date_of_Death) <= 7
 
         -- remove staged clusters 
         DELETE FROM #ST_MAX_New_Clients_Final
@@ -941,22 +943,22 @@ AS
 
         --====================Create final output tables ===================================
 
-        --1. Final breakdown of ST-Max services by final outcome:
-        DROP TABLE IF EXISTS #OutputTable_Disaggregated
-
+        --Prepare row level table to create outputs from
+        DROP TABLE IF EXISTS #OutputTable_Row_Level
+        
         SELECT 
-          FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + 
-          FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
           A.LA_Code,
           R.LA_Name,
+          A.Der_NHS_LA_Combined_Person_ID,
+          P.LA_Person_Unique_Identifier_Concat AS LA_Person_Unique_Identifier,
           ST_Max_Cluster_Working_Age_Band AS Age_Band,
           Sequel_Type,
           Final_Outcome,
           Included_In_Denom,
           Included_In_Num,
           Incl_In_Unable_To_Classify,
-          COUNT(*) AS ST_Max_Count
-        INTO #OutputTable_Disaggregated
+          1 AS ST_Max_Count
+        INTO #OutputTable_Row_Level
         FROM (
           SELECT 
             *,
@@ -1007,25 +1009,37 @@ AS
           FROM #ASCOF2A) A
         LEFT JOIN ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup_April_2024 R
         ON A.LA_Code = R.LA_Code
+        LEFT JOIN ASC_Sandbox.InputTable_PersonDetails P -- Person details table to pull through LA person IDs
+        ON A.Der_NHS_LA_Combined_Person_ID = P.Der_NHS_LA_Combined_Person_ID
+        AND A.LA_Code = P.LA_Code
+
+        ---------- 1. Final breakdown of ST-Max services by final outcome for main dashboard ----------
+        DROP TABLE IF EXISTS #OutputTable_Disaggregated
+        
+        SELECT
+          FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
+          LA_Code,
+          LA_Name,
+          Age_Band,
+          Sequel_Type,
+          Final_Outcome,
+          Included_In_Denom,
+          Included_In_Num,
+          Incl_In_Unable_To_Classify,
+          SUM(ST_Max_Count) AS ST_Max_Count
+        INTO #OutputTable_Disaggregated
+        FROM #OutputTable_Row_Level
         GROUP BY  
-          A.LA_Code, 
-          R.LA_Name,
-          ST_Max_Cluster_Working_Age_Band,
+          LA_Code,
+          LA_Name,
+          Age_Band,
           Final_Outcome,
           Sequel_Type, 
           Included_In_Denom,
           Included_In_Num,
           Incl_In_Unable_To_Classify
-        ORDER BY 
-          A.LA_Code, 
-          R.LA_Name,
-          ST_Max_Cluster_Working_Age_Band,
-          Final_Outcome,
-          Sequel_Type
 
-
-        -- 2. Summary table for PBI
-
+        ---------- 2. LA level aggregated table for main dashboard ASCOF page ----------
         -- Step 1: Define all age band categories including 'Total'
         DROP TABLE IF EXISTS #AgeBands
 
@@ -1062,7 +1076,7 @@ AS
 
 
         -- Step 4: Combine full grid with actual data
-        DROP TABLE IF EXISTS #OutputTable
+        DROP TABLE IF EXISTS #OutputTable_Aggregated
 
         SELECT 
           FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
@@ -1079,7 +1093,7 @@ AS
               (CAST(ISNULL(agg.Numerator, 0) AS FLOAT) / 
                CAST(agg.Denominator AS FLOAT)) * 100, 1)
           END AS [Outcome]
-        INTO #OutputTable
+        INTO #OutputTable_Aggregated
         FROM #LA_AgeBand_Cross lac
         LEFT JOIN #Aggregated agg 
           ON lac.LA_Code = agg.LA_Code 
@@ -1091,25 +1105,94 @@ AS
 		               --WHEN lac.Age_Band = 'Unknown' THEN 3 -- don't display unknown ages in final table
                    ELSE 4
                  END;
-   
+    
+        ---------- 3. Person level table for record level sharing report ----------
+        DROP TABLE IF EXISTS #OutputTable_Row_Level_Temp
+
+        SELECT
+          LA_Code,
+          LA_Name,
+          LA_Person_Unique_Identifier,
+          Age_Band AS [Group],
+          CASE WHEN Included_In_Num = 'Y' THEN ST_Max_Count ELSE 0 END AS Numerator,
+          CASE WHEN Included_In_Denom = 'Y' THEN ST_Max_Count ELSE 0 END AS Denominator,
+          Sequel_Type
+        INTO #OutputTable_RLS_temp
+        FROM #OutputTable_Row_Level
+        WHERE Age_band <> 'Unknown'
+        AND Included_In_Denom = 'Y'
+        
+        UNION ALL
+
+        SELECT
+          LA_Code,
+          LA_Name,
+          LA_Person_Unique_Identifier,
+          'Total' AS [Group],
+          CASE WHEN Included_In_Num = 'Y' THEN ST_Max_Count ELSE 0 END AS Numerator,
+          CASE WHEN Included_In_Denom = 'Y' THEN ST_Max_Count ELSE 0 END AS Denominator,
+          Sequel_Type
+        FROM #OutputTable_Row_Level
+        WHERE Included_In_Denom = 'Y'
+
+        --Ensure all combinations of LA and Age Band exist
+        DROP TABLE IF EXISTS #OutputTable_RLS
+
+        SELECT
+          FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
+          LA_Code, 
+          LA_Name, 
+          LA_Person_Unique_Identifier,
+          'ASCOF 2A' AS Measure,
+          'The proportion of people who received short-term services during the year - who previously were not receiving services - where no further request was made for ongoing support (%)' AS [Description],
+          [Group],
+          SUM(Numerator) AS Numerator,
+          SUM(Denominator) AS Denominator,
+          Sequel_Type
+          INTO #OutputTable_RLS
+          FROM (
+            SELECT 
+              lac.LA_Code,
+              lac.LA_Name,
+              LA_Person_Unique_Identifier,
+              lac.Age_Band AS [Group],
+              o.Numerator,
+              o.Denominator,
+              o.Sequel_Type
+            FROM #LA_AgeBand_Cross lac
+            LEFT JOIN #OutputTable_RLS_temp o 
+              ON lac.LA_Code = o.LA_Code 
+                 AND lac.Age_Band = o.[Group]
+          ) A
+          GROUP BY
+            LA_Code, 
+            LA_Name,
+            LA_Person_Unique_Identifier,
+            [Group],
+            Sequel_Type
+
+    SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable_Aggregated'
+    EXEC(@Query)
+
     SET @Query = 'SELECT * INTO ' + @OutputTable_Disaggregated + ' FROM #OutputTable_Disaggregated'
     EXEC(@Query)
 
-    SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable'
+    SET @Query = 'SELECT * INTO ' + @OutputTable_RLS + ' FROM #OutputTable_RLS'
     EXEC(@Query)
 
-
     DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+    DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_PersonDetails
 
 GO
 
 -----Example execution
 /*
 EXEC ASC_Sandbox.Create_ASCOF2A_2425_Onwards
-  @ReportingPeriodStartDate = '2024-04-01',
-  @ReportingPeriodEndDate = '2025-03-31',
-  @InputTable = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions_Latest_Person_Data_2425',
+  @ReportingPeriodStartDate = '2025-04-01',
+  @ReportingPeriodEndDate = '2026-03-31',
+  @InputTable = 'DHSC_Reporting.CLD_230401_260331_JoinedSubmissions_V2', 
+  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_260331_JoinedSubmissions_V2_Latest_Person_Data',
   @OutputTable_Disaggregated = 'ASC_Sandbox.ASCOF2A_Disaggregated',
-  @OutputTable = 'ASC_Sandbox.ASCOF_2A'
+  @OutputTable = 'ASC_Sandbox.ASCOF_2A',
+  @OutputTable_RLS = 'ASC_Sandbox.ASCOF_2A_RLS'
 */

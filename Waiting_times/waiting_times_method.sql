@@ -3,37 +3,35 @@
 --###################################################################################
 
 -- DHSC waiting times method for calculating LA level median waiting times. Method is provisional and subject to change following local authority feedback.
--- Version 1.1, 19 May 2026
--- See AGEM CLD website for assocaited methodology document.
+-- Version 1.1.4, 1 September 2026
 
--- Note: Quality of life improvements, such as improved table and variable names, are planned for future update.
+/* Change note: Updates from code version 1.1 to version 1.1.4 are do not impact the calculating of the waiting times.
+	Changes relate to more consistent variable and table names with some addition annotations made.
+	More efficient processing has been implemented for stage 2.4
+
+  Methodology version 1.1 applies to this code version. See AGEM CLD website for assocaited methodology document */
+
+/* Note: Some table and variable names reference the stage in which they were created. For example table "#s1_2_filtered_assessments_and_services" refers to the output table...
+		from stage 1.2 where the output table contains the assessments and service which have met the filter critera. */
 
 --###################################################################################
 -- Stage 1 - Filter for events of interest using the CLD joined submission table
 --###################################################################################
 
 ---- Stage 1.1 Create an initial table of CLD data
-	--- Also create cleaned Event Type
-	DROP TABLE IF EXISTS #all_events
+	--- For version 1.1.3 onwards Event_Type_Cleaned can be used from the joined submission table and no longer needs to be derived
+	DROP TABLE IF EXISTS #s1_1_all_events
 
-		SELECT 
-		  *,
-		  CASE 
-			WHEN Event_Type LIKE '%service%' THEN 'Service'
-			WHEN Event_Type LIKE '%assessment%' THEN 'Assessment'
-			WHEN Event_Type LIKE '%request%' THEN 'Request'
-			WHEN Event_Type LIKE '%review%' THEN 'Review'
-			ELSE 'Invalid and not mapped'
-		  END AS Event_Type_Cleaned
-		INTO #all_events
-		FROM DHSC_Reporting.CLD_230401_260331_JoinedSubmissions
+		SELECT *
+		INTO #s1_1_all_events
+		FROM DHSC_Reporting.CLD_230401_260630_JoinedSubmissions
 
 ---- Stage 1.2 Filter for relevant assessments and services
-	DROP TABLE IF EXISTS #filtered_assessments_and_services
+	DROP TABLE IF EXISTS #s1_2_filtered_assessments_and_services
 
 	SELECT *
-	INTO #filtered_assessments_and_services
-	FROM #all_events
+	INTO #s1_2_filtered_assessments_and_services
+	FROM #s1_1_all_events
 	WHERE 
 		-- Assessment critera
 		(Event_Type_Cleaned = 'Assessment'
@@ -53,11 +51,11 @@
 
 ---- Stage 1.3 Filter for valid requests
 	--- Stage 1.3a Filter requests by client type and start date
-		DROP TABLE IF EXISTS #all_requests
+		DROP TABLE IF EXISTS #s1_3a_service_user_requests
 
 		SELECT *
-		INTO #all_requests
-		FROM #all_events
+		INTO #s1_3a_service_user_requests
+		FROM #s1_1_all_events
 		WHERE Event_Type_Cleaned = 'Request'
 		  AND Client_Type_Cleaned = 'Service user'
 		  AND Event_Start_Date >= '2023-04-01'
@@ -65,24 +63,25 @@
 	--- Stage 1.3b Filter requests by age at start of request
 		-- Note: DHSC do not have access to date of birth for data privacy reasons. But DHSC are supplied derived fields including Der_Age_Event_Start_Date field. ...
 		-- ... The Der_Working_Age_Band is created in the 'derived fields' stored procedure, which is part of the joined submission table creation process.
-		DROP TABLE IF EXISTS #requests_over_25
+		-- Note: Requests are those aged below 25 are filtered out, therefore Der_Working_Age_Band label updated from 18-64 to 25-64.
+		DROP TABLE IF EXISTS #s1_3b_service_user_all_requests_over_25
 
 		SELECT 
 			*,
 			CASE
 			WHEN Der_Working_Age_Band = '18 to 64' THEN '25 to 64'
 			ELSE Der_Working_Age_Band
-			END AS Modified_Working_Age_Band
-		INTO #requests_over_25
-		FROM #all_requests
+			END AS Age_Band
+		INTO #s1_3b_service_user_all_requests_over_25
+		FROM #s1_3a_service_user_requests
 		WHERE Der_Age_Event_Start_Date >= 25;
 	
 	--- Stage 1.3c Filter out requests from existing clients
-		DROP TABLE IF EXISTS #filtered_requests
+		DROP TABLE IF EXISTS #s1_3c_service_user_new_requests_over_25
 		SELECT r.*
-		INTO #filtered_requests
-		FROM  #requests_over_25 r
-		LEFT JOIN #filtered_assessments_and_services s
+		INTO #s1_3c_service_user_new_requests_over_25
+		FROM  #s1_3b_service_user_all_requests_over_25 r
+		LEFT JOIN #s1_2_filtered_assessments_and_services s
 			  ON 
 			  r.LA_Code = s.LA_Code
 			  AND r.Der_NHS_LA_Combined_Person_ID = s.Der_NHS_LA_Combined_Person_ID
@@ -109,7 +108,7 @@
 	--- DHSC derives the variable Event_Outcome_Grouped as part of its data cleaning processes. This process is not available on Github. ...
 	--- ... Event_Outcome_Grouped has value 'NFA' for all NFA NFA values for the cleaned version of the event outcome variable. It has value 'Admitted to hospital' where the cleaned event outcome is also 'Admitted to hospital'
 
-		DROP TABLE IF EXISTS #valid_requests
+		DROP TABLE IF EXISTS #s1_4_valid_requests
 
 		SELECT *,
 			ROW_NUMBER() OVER (PARTITION BY 
@@ -120,8 +119,8 @@
 							  ImportDate desc,
 							  Der_Unique_Record_ID desc )
 							as person_valid_request_order
-		INTO #valid_requests
-		FROM #filtered_requests
+		INTO #s1_4_valid_requests
+		FROM #s1_3c_service_user_new_requests_over_25
 		WHERE Event_Outcome_Grouped NOT IN ('NFA','Admitted to hospital');
 
 
@@ -133,7 +132,7 @@
 	--- Where requests have passed all previous criteria and assessments and services events where age at start of event is 25 or above. For each person, create chronological order of all of their events.
 	--- Chronology logic is expanded form of request chronology where events have order of priorty as request, assessments, services.
 
-	DROP TABLE IF EXISTS #filtered_requests_assessments_and_services
+	DROP TABLE IF EXISTS #s2_1_filtered_requests_assessments_and_services
 
 	SELECT u.*,
 			ROW_NUMBER() OVER (PARTITION BY 
@@ -151,39 +150,39 @@
 							   u.ImportDate desc,
 							   u.Der_Unique_Record_ID desc)
 							as person_valid_event_order	
-	INTO #filtered_requests_assessments_and_services
+	INTO #s2_1_filtered_requests_assessments_and_services
 	FROM(
 		SELECT *
-		FROM #valid_requests
+		FROM #s1_4_valid_requests
 		UNION ALL
 		SELECT *, 
 			CASE
 				WHEN Der_Working_Age_Band = '18 to 64' THEN '25 to 64'
 				ELSE Der_Working_Age_Band
-			END AS Modified_Working_Age_Band, 
+			END AS Age_Band, 
 			NULL as person_valid_request_order -- Create variable with NULL content as union requires inputs to have same variables
-		FROM #filtered_assessments_and_services
+		FROM #s1_2_filtered_assessments_and_services
 		WHERE Der_Age_Event_Start_Date >= 25
 		) u
 
 	---- Temporarily save down table to cut re-processing time
-	--DROP TABLE IF EXISTS ASC_Sandbox.Temp_Waiting_Times_S2_1
+	--DROP TABLE IF EXISTS asc_sandbox.Temp_Waiting_Times_S2_1
 	--SELECT *
-	--INTO ASC_Sandbox.Temp_Waiting_Times_S2_1
-	--FROM #filtered_requests_assessments_and_services;
+	--INTO asc_sandbox.Temp_Waiting_Times_S2_1
+	--FROM #s2_1_filtered_requests_assessments_and_services;
 
-	--- Temporarily reinstate to cut re-processing time
-	--DROP TABLE IF EXISTS #filtered_requests_assessments_and_services
+	-- Temporarily reinstate to cut re-processing time
+	--DROP TABLE IF EXISTS #s2_1_filtered_requests_assessments_and_services
 	--SELECT * 
-	--INTO #filtered_requests_assessments_and_services
-	--FROM ASC_Sandbox.Temp_Waiting_Times_S2_1;
+	--INTO #s2_1_filtered_requests_assessments_and_services
+	--FROM asc_sandbox.Temp_Waiting_Times_S2_1;
 
 ---- Stage 2.2 Remove clients who have assessments or services but no associated requests
 	--- No valid assessment/service flag not filtered for as some requests may be proportionate assessments and therefore also act as the assessment. Flag retained for contextual data.
-	DROP TABLE IF EXISTS #filtered_requests_assessments_and_services_2;
+	DROP TABLE IF EXISTS #s2_2_filtered_requests_assessments_and_services;
 
 	SELECT a.*
-	INTO #filtered_requests_assessments_and_services_2
+	INTO #s2_2_filtered_requests_assessments_and_services
 	FROM (
 		SELECT	*,
 			-- Flag clients with valid assessments and services but no valid requests
@@ -200,7 +199,7 @@
 				THEN 1
 				ELSE 0
 			END AS person_all_events_requests
-		FROM #filtered_requests_assessments_and_services) a
+		FROM #s2_1_filtered_requests_assessments_and_services) a
 	where a.person_no_valid_requests = 0 ;
 		--AND a.person_all_events_requests = 0; -- see note
 
@@ -209,7 +208,7 @@
 		--- The source table for this analysis has had all data transformed to release 2 values. ...
 		--- ... When Event_Outcome_Cleaned is 'Release 1 specification only: Not mapped' it is capturing the release 1 only values of 'Progress to financial assessment ' and 'Progress to End of Life Care'.
 
-	DROP TABLE IF EXISTS #filtered_requests_assessments_and_services_3;
+	DROP TABLE IF EXISTS #s2_3a_filtered_requests_assessments_and_services;
 
 	SELECT *,
 		--CASE 
@@ -251,11 +250,12 @@
 			ELSE 0
 		END AS request_indicates_progress_to_service
 
-	INTO #filtered_requests_assessments_and_services_3
-	FROM #filtered_requests_assessments_and_services_2;
+	INTO #s2_3a_filtered_requests_assessments_and_services
+	FROM #s2_2_filtered_requests_assessments_and_services;
 
 	--- Stage 2.3b Identify consecutive assessments where at least one of them indicates progress to service
 		-- Use WITH function to build a temporary table to use in the next part of function. This instance chains two temporary tables (create_assessment_block and determine_block_progress) before the outputing the final table
+		DROP TABLE IF EXISTS #s2_3b_filtered_requests_assessments_and_services;
 		WITH 
 			-- Assign IDs to events to identify when there are consecutive assessments
 			create_assessment_blocks AS 
@@ -272,7 +272,7 @@
 							ORDER BY base.person_valid_event_order
 							ROWS UNBOUNDED PRECEDING
 						) AS assessment_block_id
-				FROM #filtered_requests_assessments_and_services_3 base 
+				FROM #s2_3a_filtered_requests_assessments_and_services base 
 				),
 			-- Determine presence of assessment progress to service in block
 			determine_block_progress AS
@@ -290,107 +290,157 @@
 				CASE WHEN prog.is_assessment = 1 THEN prog.max_flag_over_assessment_block
 					ELSE NULL
 				END AS assessment_block_indicates_progress_to_service
-			INTO #filtered_requests_assessments_and_services_4
+			INTO #s2_3b_filtered_requests_assessments_and_services
 			FROM determine_block_progress prog
 			ORDER BY LA_Code, Der_NHS_LA_Combined_Person_ID, person_valid_event_order; 
 
 			--- Drop variables
-				ALTER TABLE #filtered_requests_assessments_and_services_4
+				ALTER TABLE #s2_3b_filtered_requests_assessments_and_services
 				DROP COLUMN is_assessment, max_flag_over_assessment_block;
 
+		-- Split output table into individual indexed tables for each event type
+			-- Helps with efficieny of stage 2.4
+
+			-- Requests
+				DROP TABLE IF EXISTS #s2_3b_requests_indexed;
+
+				SELECT *
+				INTO #s2_3b_requests_indexed
+				FROM #s2_3b_filtered_requests_assessments_and_services
+				WHERE Event_Type_Cleaned = 'Request';
+
+				CREATE CLUSTERED INDEX IX_requests
+				ON #s2_3b_requests_indexed
+				(
+					LA_Code,
+					Der_NHS_LA_Combined_Person_ID,
+					person_valid_event_order
+				);
+
+			-- Assessments
+				DROP TABLE IF EXISTS #s2_3b_assessments_indexed;
+
+				SELECT *
+				INTO #s2_3b_assessments_indexed
+				FROM #s2_3b_filtered_requests_assessments_and_services
+				WHERE Event_Type_Cleaned = 'Assessment';
+
+				CREATE CLUSTERED INDEX IX_assessments
+				ON #s2_3b_assessments_indexed
+				(
+					LA_Code,
+					Der_NHS_LA_Combined_Person_ID,
+					person_valid_event_order
+				);
+
+			-- Services
+				DROP TABLE IF EXISTS #s2_3b_services_indexed;
+
+				SELECT *
+				INTO #s2_3b_services_indexed
+				FROM #s2_3b_filtered_requests_assessments_and_services
+				WHERE Event_Type_Cleaned = 'Service';
+
+				CREATE CLUSTERED INDEX IX_services
+				ON #s2_3b_services_indexed
+				(
+					LA_Code,
+					Der_NHS_LA_Combined_Person_ID,
+					person_valid_event_order
+				);
+
 ---- Stage 2.4 Link each request for a person to the first assessment and service following the request
-	DROP TABLE IF EXISTS #requests_bind_1
+	-- Note: Variables related to the first assessment after the request are named as "response" variables as future stages will account for situations where the response could be a request or service, not just an assessment.
+	DROP TABLE IF EXISTS #s2_4_linked_events
 
 	SELECT
-		r.LA_Code,
-		r.Der_NHS_LA_Combined_Person_ID,
-		r.Der_Unique_Record_ID AS request_Der_Unique_Record_ID,
-		r.Event_Start_Date AS request_start_date,
-		r.Modified_Working_Age_Band AS request_Modified_Working_Age_Band,
-		r.person_valid_event_order AS request_event_order,
-		r.request_indicates_progress,
-		r.request_indicates_progress_to_service,
-		r.Der_Conversation AS request_Der_Conversation,
+		r.LA_Code									,
+		r.LA_Name									,
+		r.Der_NHS_LA_Combined_Person_ID				,
+		r.LA_Person_Unique_Identifier				,
+		r.Der_Unique_Record_ID						AS request_Der_Unique_Record_ID,
+		r.Event_Start_Date							AS request_start_date,
+		r.Age_Band									AS request_age_band,
+		r.person_valid_event_order					AS request_event_order,
+		r.request_indicates_progress				,
+		r.request_indicates_progress_to_service		,
+		r.Der_Conversation							AS request_Der_Conversation,
 
 		-- First Assessment after the Request
-		nextAsmt.person_valid_event_order AS next_assessment_order,
-		nextAsmt.Event_Type_Cleaned AS next_assessment_event_type,
-		nextAsmt.Assessment_Type_Cleaned as next_assessment_type,
-		nextAsmt.Event_Start_Date AS next_assessment_start_date,
-		nextAsmt.Modified_Working_Age_Band AS next_assessment_Modified_Working_Age_Band,
-		nextAsmt.assessment_indicates_progress_to_service AS next_assessment_indicates_progress_to_service,
-		nextAsmt.assessment_block_indicates_progress_to_service AS next_assessment_block_indicates_progress_to_service,
-		nextAsmt.Der_Unique_Record_ID AS next_assessment_Der_Unique_Record_ID,
+		nextAsmt.person_valid_event_order							AS s2_4_response_event_order,
+		nextAsmt.Event_Type_Cleaned									AS s2_4_response_event_type,
+		nextAsmt.Assessment_Type_Cleaned							AS s2_4_response_assessment_type,
+		nextAsmt.Event_Start_Date									AS s2_4_response_start_date,
+		nextAsmt.Age_Band											AS s2_4_response_age_band,
+		nextAsmt.assessment_indicates_progress_to_service			AS s2_4_response_assessment_indicates_progress_to_service,
+		nextAsmt.assessment_block_indicates_progress_to_service		AS s2_4_response_assessment_block_indicates_progress_to_service,
+		nextAsmt.Der_Unique_Record_ID								AS s2_4_response_Der_Unique_Record_ID,
 
 		-- First Service after the Request
-		nextSrv.person_valid_event_order AS next_service_order,
-		nextSrv.Event_Type_Cleaned AS next_service_event_type,
-		nextSrv.Service_Type_Cleaned as next_service_type,
-		nextSrv.Event_Start_Date AS next_service_start_date,
-		nextSrv.Modified_Working_Age_Band AS next_service_Modified_Working_Age_Band,
-		nextSrv.Der_Unique_Record_ID AS next_service_Der_Unique_Record_ID
+		nextSrv.person_valid_event_order	AS s2_4_service_event_order,
+		nextSrv.Event_Type_Cleaned			AS s2_4_service_event_type,
+		nextSrv.Service_Type_Cleaned		AS s2_4_service_type,
+		nextSrv.Event_Start_Date			AS s2_4_service_start_date,
+		nextSrv.Age_Band					AS s2_4_service_age_band,
+		nextSrv.Der_Unique_Record_ID		AS s2_4_service_Der_Unique_Record_ID
 
-	INTO #requests_bind_1
-	FROM #filtered_requests_assessments_and_services_4 r
+	INTO #s2_4_linked_events
+	FROM #s2_3b_requests_indexed r
 
 		-- First Assessment after request
 		OUTER APPLY (
 			SELECT TOP 1 x.*
-			FROM #filtered_requests_assessments_and_services_4 x
+			FROM #s2_3b_assessments_indexed x
 			WHERE x.LA_Code = r.LA_Code
 			  AND x.Der_NHS_LA_Combined_Person_ID = r.Der_NHS_LA_Combined_Person_ID
 			  AND x.person_valid_event_order > r.person_valid_event_order
-			  AND x.Event_Type_Cleaned = 'Assessment'
 			ORDER BY x.person_valid_event_order
 		) nextAsmt
 
 		-- First Service after request
 		OUTER APPLY (
 			SELECT TOP 1 y.*
-			FROM #filtered_requests_assessments_and_services_4 y
+			FROM #s2_3b_services_indexed y
 			WHERE y.LA_Code = r.LA_Code
 			  AND y.Der_NHS_LA_Combined_Person_ID= r.Der_NHS_LA_Combined_Person_ID
 			  AND y.person_valid_event_order > r.person_valid_event_order
-			  AND y.Event_Type_Cleaned = 'Service'
 			ORDER BY y.person_valid_event_order
-		) nextSrv
-	WHERE r.Event_Type_Cleaned = 'Request'
-	ORDER BY r.LA_Code, r.Der_NHS_LA_Combined_Person_ID, r.person_valid_event_order;
+		) nextSrv;
+
 
 	---- Temporarily save down table to cut re-processing time
-	--DROP TABLE IF EXISTS ASC_Sandbox.Temp_Waiting_Times_S2_4
+	--DROP TABLE IF EXISTS asc_sandbox.Temp_Waiting_Times_S2_4
 	--SELECT *
-	--INTO ASC_Sandbox.Temp_Waiting_Times_S2_4
-	--FROM #requests_bind_1;
+	--INTO asc_sandbox.Temp_Waiting_Times_S2_4
+	--FROM #s2_4_linked_events;
 
-	--- Temporarily re-instate table to cut re-processing time
-	--DROP TABLE IF EXISTS #requests_bind_1;
+	---- Temporarily re-instate table to cut re-processing time
+	--DROP TABLE IF EXISTS #s2_4_linked_events;
 	--SELECT *
-	--INTO #requests_bind_1
-	--FROM ASC_Sandbox.Temp_Waiting_Times_S2_4;
-
+	--INTO #s2_4_linked_events
+	--FROM asc_sandbox.Temp_Waiting_Times_S2_4;
 
 --###################################################################################
 -- Stage 3 - Account for 3-conversations model, missing assessments and discount excess requests
 --###################################################################################
 
 ---- Stage 3.1 Allow requests to act as an assessment when a conversation is flagged for release 1 requests
-	DROP TABLE IF EXISTS  #requests_bind_1b
+	DROP TABLE IF EXISTS  #s3_1_linked_events_3Cs
 
 	SELECT *,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_event_order ELSE next_assessment_order END AS temp_next_assessment_order,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN 'Request' ELSE next_assessment_event_type END AS temp_next_assessment_event_type,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_type END AS temp_next_assessment_type,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_start_date ELSE next_assessment_start_date END AS temp_next_assessment_start_date,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_Modified_Working_Age_Band ELSE next_assessment_Modified_Working_Age_Band END AS temp_next_assessment_Modified_Working_Age_Band,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_Der_Unique_Record_ID ELSE next_assessment_Der_Unique_Record_ID END AS temp_next_assessment_Der_Unique_Record_ID,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_indicates_progress_to_service END AS temp_next_assessment_indicates_progress_to_service,
-			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL ELSE next_assessment_block_indicates_progress_to_service END AS temp_next_assessment_block_indicates_progress_to_service
-	INTO #requests_bind_1b
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_event_order			ELSE s2_4_response_event_order				END AS s3_1_response_event_order,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN 'Request'						ELSE s2_4_response_event_type				END AS s3_1_response_event_type,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL							ELSE s2_4_response_assessment_type			END AS s3_1_response_assessment_type,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_start_date				ELSE s2_4_response_start_date				END AS s3_1_response_start_date,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_age_band				ELSE s2_4_response_age_band					END AS s3_1_response_age_band,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN request_Der_Unique_Record_ID	ELSE s2_4_response_Der_Unique_Record_ID		END AS s3_1_response_Der_Unique_Record_ID,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL							ELSE s2_4_response_assessment_indicates_progress_to_service			END AS s3_1_response_indicates_progress_to_service,
+			CASE WHEN (c1_request_override = 1 AND request_spec = 'R1') THEN NULL							ELSE s2_4_response_assessment_block_indicates_progress_to_service	END AS s3_1_response_block_indicates_progress_to_service
+	INTO #s3_1_linked_events_3Cs
 	FROM (	SELECT *,
 				-- Create conversation 1 override flag
 				CASE 
-					WHEN ((request_start_date < next_assessment_start_date) OR next_assessment_start_date IS NULL)
+					WHEN ((request_start_date <  s2_4_response_start_date) OR  s2_4_response_start_date IS NULL)
 						AND request_Der_Conversation = 1 
 						AND request_indicates_progress = 1
 					THEN 1 
@@ -402,90 +452,90 @@
 					 WHEN request_start_date >= '2025-07-01' THEN 'R2'
 					 ELSE 'Other' 
 				END AS request_spec
-			FROM #requests_bind_1
+			FROM #s2_4_linked_events
 		) a;
 
 ---- Stage 3.2 Allow services to be first response in part 1 metric
-	DROP TABLE IF EXISTS #requests_bind_2
+	DROP TABLE IF EXISTS #s3_2_linked_events_service_as_response
 
 	SELECT *,
-			CASE WHEN next_assessment_service_override = 1 THEN next_service_order ELSE temp_next_assessment_order END AS modified_next_assessment_order,
-			CASE WHEN next_assessment_service_override = 1 THEN next_service_event_type ELSE temp_next_assessment_event_type END AS modified_next_assessment_event_type,
-			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_type END AS modified_next_assessment_type,
-			CASE WHEN next_assessment_service_override = 1 THEN next_service_start_date ELSE temp_next_assessment_start_date END AS modified_next_assessment_start_date,
-			CASE WHEN next_assessment_service_override = 1 THEN next_service_Modified_Working_Age_Band ELSE temp_next_assessment_Modified_Working_Age_Band END AS modified_next_assessment_Mod_Working_Age_Band,
-			CASE WHEN next_assessment_service_override = 1 THEN next_service_Der_Unique_Record_ID ELSE temp_next_assessment_Der_Unique_Record_ID END AS modified_next_assessment_Der_Unique_Record_ID,
-			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_indicates_progress_to_service END AS modified_next_assessment_indicates_progress_to_service,
-			CASE WHEN next_assessment_service_override = 1 THEN NULL ELSE temp_next_assessment_block_indicates_progress_to_service END AS modified_next_assessment_block_indicates_progress_to_service
+			CASE WHEN next_assessment_service_override = 1 THEN s2_4_service_event_order			ELSE s3_1_response_event_order							END AS s3_2_response_event_order,
+			CASE WHEN next_assessment_service_override = 1 THEN s2_4_service_event_type				ELSE s3_1_response_event_type							END AS s3_2_response_event_type,
+			CASE WHEN next_assessment_service_override = 1 THEN NULL								ELSE s3_1_response_assessment_type						END AS s3_2_response_assessment_type,
+			CASE WHEN next_assessment_service_override = 1 THEN s2_4_service_start_date				ELSE s3_1_response_start_date							END AS s3_2_response_start_date,
+			CASE WHEN next_assessment_service_override = 1 THEN s2_4_service_age_band				ELSE s3_1_response_age_band								END AS s3_2_response_age_band,
+			CASE WHEN next_assessment_service_override = 1 THEN s2_4_service_Der_Unique_Record_ID	ELSE s3_1_response_Der_Unique_Record_ID					END AS s3_2_response_Der_Unique_Record_ID,
+			CASE WHEN next_assessment_service_override = 1 THEN NULL								ELSE s3_1_response_indicates_progress_to_service		END AS s3_2_response_indicates_progress_to_service,
+			CASE WHEN next_assessment_service_override = 1 THEN NULL								ELSE s3_1_response_block_indicates_progress_to_service	END AS s3_2_response_block_indicates_progress_to_service
 
-	INTO #requests_bind_2
+	INTO #s3_2_linked_events_service_as_response
 	FROM (
 		SELECT *,
 		CASE 
-			WHEN temp_next_assessment_order > next_service_order THEN 1 
-			WHEN temp_next_assessment_order IS NULL AND next_service_order IS NOT NULL THEN 1 
+			WHEN s3_1_response_event_order > s2_4_service_event_order THEN 1 
+			WHEN s3_1_response_event_order IS NULL AND s2_4_service_event_order IS NOT NULL THEN 1 
 			ELSE 0 
 		END AS next_assessment_service_override,
 		-- further variable added for validation 
-		CASE WHEN temp_next_assessment_start_date > next_service_start_date THEN 1 ELSE 0 END AS next_assessment_service_date_override
-		FROM #requests_bind_1b) a;
+		CASE WHEN s3_1_response_start_date > s2_4_service_start_date THEN 1 ELSE 0 END AS next_assessment_service_date_override
+		FROM #s3_1_linked_events_3Cs) a;
 
 	--- Drop temp variables
-	ALTER TABLE #requests_bind_2
-	DROP COLUMN temp_next_assessment_order, temp_next_assessment_event_type, temp_next_assessment_type, temp_next_assessment_start_date, temp_next_assessment_Modified_Working_Age_Band, temp_next_assessment_Der_Unique_Record_ID;
+	ALTER TABLE #s3_2_linked_events_service_as_response
+	DROP COLUMN s3_1_response_event_order, s3_1_response_event_type, s3_1_response_assessment_type, s3_1_response_start_date, s3_1_response_age_band, s3_1_response_Der_Unique_Record_ID;
 
 ---- Stage 3.3 Exclude services from part 2 metric where an intervening assessment block does not indicate progress to service
-	DROP TABLE IF EXISTS #requests_bind_3
+	DROP TABLE IF EXISTS #s3_3_linked_events_exclude_no_progress
 
 	SELECT *,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_order END AS modified_next_service_order,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_event_type END AS modified_next_service_event_type,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_type END AS modified_next_service_type,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_start_date END AS modified_next_service_start_date,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Modified_Working_Age_Band END AS modified_next_service_Mod_Working_Age_Band,
-			CASE WHEN modified_next_assessment_event_type = 'Assessment' and modified_next_assessment_block_indicates_progress_to_service = 0 THEN NULL ELSE next_service_Der_Unique_Record_ID END AS modified_next_service_Der_Unique_Record_ID
-	INTO #requests_bind_3
-	FROM #requests_bind_2;
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_event_order				END AS s3_3_service_event_order,
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_event_type				END AS s3_3_service_event_type,
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_type					END AS s3_3_service_type,
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_start_date				END AS s3_3_service_start_date,
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_age_band				END AS s3_3_service_age_band,
+			CASE WHEN s3_2_response_event_type = 'Assessment' and s3_2_response_block_indicates_progress_to_service = 0 THEN NULL ELSE s2_4_service_Der_Unique_Record_ID	END AS s3_3_service_Der_Unique_Record_ID
+	INTO #s3_3_linked_events_exclude_no_progress
+	FROM #s3_2_linked_events_service_as_response;
 
 
 ---- Stage 3.4 Exclude requests that overlap with ongoing activity linked to a previous request
 
-	DROP TABLE IF EXISTS #requests_bind_4
+	DROP TABLE IF EXISTS #s3_4_linked_events_exclude_overlap
 	
 	SELECT *,
 			CASE
-				WHEN LAG(GREATEST(modified_next_assessment_order, modified_next_service_order)) OVER (
+				WHEN LAG(GREATEST(s3_2_response_event_order, s3_3_service_event_order)) OVER (
 							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
 							ORDER BY request_event_order) > request_event_order
 					THEN 1
-				WHEN modified_next_assessment_order <= max_modified_next_assessment_order_prev 
+				WHEN s3_2_response_event_order <= max_s3_2_response_event_order_prev 
 					THEN 1
-				WHEN modified_next_service_order <= max_modified_next_service_order_prev
+				WHEN s3_3_service_event_order <= max_s3_3_service_event_order_prev
 					THEN 1
 				ELSE 0
 				END AS request_starts_before_previous_request_follow_up_ends
 
-	INTO #requests_bind_4
+	INTO #s3_4_linked_events_exclude_overlap
 	FROM (	SELECT *,
 				-- For each row for a person, detected the highest previous first response event order
 				-- Note: Coalesce, with the 0 value, is used to ensure the value is not NULL.
 					COALESCE(
-						MAX(modified_next_assessment_order) OVER (
+						MAX(s3_2_response_event_order) OVER (
 							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
 							ORDER BY request_event_order
 							ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
 						),
-						0) AS max_modified_next_assessment_order_prev,
+						0) AS max_s3_2_response_event_order_prev,
 				-- For each row for a person, detected the highest previous service event order
 				-- Note: Coalesce, with the 0 value, is used to ensure the value is not NULL.
 					COALESCE(
-						MAX(modified_next_service_order) OVER (
+						MAX(s3_3_service_event_order) OVER (
 							PARTITION BY LA_Code, Der_NHS_LA_Combined_Person_ID
 							ORDER BY request_event_order
 							ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
 						),
-						0) AS max_modified_next_service_order_prev
-			FROM #requests_bind_3) a;
+						0) AS max_s3_3_service_event_order_prev
+			FROM #s3_3_linked_events_exclude_no_progress) a;
 
 
 --###################################################################################
@@ -494,7 +544,7 @@
 
 ---- Stage 4.1 Calculate waiting times at an individual level and group waiting times by reporting period
 
-	DROP TABLE IF EXISTS #wait_times_calc_1
+	DROP TABLE IF EXISTS #s4_1_person_level_waiting_times
 
 	SELECT *,
 		-- Create statistical reporting period end dates
@@ -504,15 +554,15 @@
 		
 		-- Calculate part 1 wait time
 		CASE
-			WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEDIFF(DAY, request_start_date, modified_next_assessment_start_date)
+			WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEDIFF(DAY, request_start_date, s3_2_response_start_date)
 			ELSE NULL
 		END AS part1_wait_time,
 		-- Calculate part 2 wait time
 		CASE
-			WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEDIFF(DAY, request_start_date, modified_next_service_start_date)
+			WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEDIFF(DAY, request_start_date, s3_3_service_start_date)
 			ELSE NULL
 		END AS part2_wait_time
-	INTO #wait_times_calc_1
+	INTO #s4_1_person_level_waiting_times
 	FROM (SELECT *,
 			-- The start date of the statistical reporting period (quarter) the request starts in
 			  CASE WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN  DATEFROMPARTS(YEAR(request_start_date), ((DATEPART(QUARTER, request_start_date) - 1) * 3) + 1, 1) 
@@ -520,66 +570,68 @@
 			 END AS stat_reporting_period_start_request,
 			
 			-- The start date of the statistical reporting period (quarter) the part 1 event starts in
-			  CASE WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEFROMPARTS(YEAR(modified_next_assessment_start_date), ((DATEPART(QUARTER, modified_next_assessment_start_date) - 1) * 3) + 1, 1) 
+			  CASE WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEFROMPARTS(YEAR(s3_2_response_start_date), ((DATEPART(QUARTER, s3_2_response_start_date) - 1) * 3) + 1, 1) 
 				ELSE NULL
 			  END AS stat_reporting_period_start_part1,
 
 			-- The start date of the statistical reporting period (quarter) the part 2 event starts in
-			  CASE WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEFROMPARTS(YEAR(modified_next_service_start_date), ((DATEPART(QUARTER, modified_next_service_start_date ) - 1) * 3) + 1, 1) 
+			  CASE WHEN request_starts_before_previous_request_follow_up_ends = 0 THEN DATEFROMPARTS(YEAR(s3_3_service_start_date), ((DATEPART(QUARTER, s3_3_service_start_date ) - 1) * 3) + 1, 1) 
 				ELSE NULL
 			  END AS stat_reporting_period_start_part2
-			FROM #requests_bind_4 
+			FROM #s3_4_linked_events_exclude_overlap 
 			) a;
 
 ---- Stage 4.2 Create local authority level median waiting times
 		---- Exclude invalid data
 		---- Created seperately for parts 1 and 2 and then appended together
 
-	DROP TABLE IF EXISTS #wait_times_calc_la_both_parts
+	DROP TABLE IF EXISTS #s4_2_la_level_waiting_times
 	SELECT DISTINCT
 			LA_Code,
+			LA_Name,
 			stat_reporting_period_start_part1 AS Statistical_Reporting_Period_Start,
 			stat_reporting_period_end_part1 AS Statistical_Reporting_Period_End,
-			modified_next_assessment_Mod_Working_Age_Band AS Modified_Working_Age_Band,
+			s3_2_response_age_band AS Age_Band,
 			'Wait time to first response' AS Metric,
 			-- Create LA level median
 			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY part1_wait_time)
 				OVER (PARTITION BY LA_Code,
 									stat_reporting_period_start_part1,
-									modified_next_assessment_Mod_Working_Age_Band)
+									s3_2_response_age_band)
 				AS Median_Waiting_Time,
 			-- Create count of valid waiting times
 			COUNT(*) OVER (
 				PARTITION BY LA_Code,
 								stat_reporting_period_start_part1,
-								modified_next_assessment_Mod_Working_Age_Band)
+								s3_2_response_age_band)
 				AS Number_Of_Waiting_Times_Identified
-	INTO #wait_times_calc_la_both_parts
-	FROM #wait_times_calc_1
+	INTO #s4_2_la_level_waiting_times
+	FROM #s4_1_person_level_waiting_times
 	WHERE part1_wait_time IS NOT NULL
-		AND modified_next_assessment_Mod_Working_Age_Band IN ('25 to 64', '65 and above') -- to be updated to 25 to 64
+		AND s3_2_response_age_band IN ('25 to 64', '65 and above') 
 	UNION ALL
 	SELECT DISTINCT
 			LA_Code,
+			LA_Name,
 			stat_reporting_period_start_part2 AS Statistical_Reporting_Period_Start,
 			stat_reporting_period_end_part2 AS Statistical_Reporting_Period_End,
-			modified_next_service_Mod_Working_Age_Band AS Modified_Working_Age_Band,
+			s3_3_service_age_band AS Age_Band,
 			'Wait time to first service' AS Metric,
 			-- Create LA level median
 			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY part2_wait_time)
 				OVER (PARTITION BY LA_Code,
 									stat_reporting_period_start_part2,
-									modified_next_service_Mod_Working_Age_Band)
+									s3_3_service_age_band)
 				AS Median_Waiting_Time,
 			-- Create count of valid waiting times
 			COUNT(*) OVER (
 				PARTITION BY LA_Code,
 								stat_reporting_period_start_part2,
-								modified_next_service_Mod_Working_Age_Band)
+								s3_3_service_age_band)
 				AS Number_Of_Waiting_Times_Identified
-	FROM #wait_times_calc_1
+	FROM #s4_1_person_level_waiting_times
 	WHERE part2_wait_time IS NOT NULL
-		AND modified_next_service_Mod_Working_Age_Band IN ('25 to 64', '65 and above'); -- to be updated to 25 to 64
+		AND s3_3_service_age_band IN ('25 to 64', '65 and above');
 
 --###################################################################################
 -- Stage 5  - Create contextual information for Athena dashboard
@@ -589,32 +641,32 @@
 	--- Requires output of Stage 2.1
 	--- Note: Waiting times are calculated using the request, regardless of what statistical reporting period it is in. ...
 	--- ... Hence the count of requests here is not as contextually useful for the metrics than the counts of assessments and services.
-	DROP TABLE IF EXISTS #contextual_event_counts;
+	DROP TABLE IF EXISTS #s5_1_contextual_event_counts;
 	SELECT calc.*,
 			context.all_request_count,
 			context.all_assessment_count,
 			context.all_service_count
-	INTO #contextual_event_counts
-	FROM #wait_times_calc_la_both_parts AS calc
+	INTO #s5_1_contextual_event_counts
+	FROM #s4_2_la_level_waiting_times AS calc
 	LEFT JOIN ( -- Create summary information
-			SELECT LA_Name, LA_Code, Modified_Working_Age_Band, Statistical_Reporting_Period_Start,
+			SELECT LA_Name, LA_Code, Age_Band, Statistical_Reporting_Period_Start,
 						SUM(CASE WHEN Event_Type_Cleaned = 'Request' THEN 1 ELSE 0 END) AS all_request_count,
 						SUM(CASE WHEN Event_Type_Cleaned = 'Assessment' THEN 1 ELSE 0 END) AS all_assessment_count,
 						SUM(CASE WHEN Event_Type_Cleaned = 'Service' THEN 1 ELSE 0 END) AS all_service_count
 			FROM ( -- Create Statistical Reporting Period variable
-					SELECT LA_Name, LA_Code, Event_Type_Cleaned, Modified_Working_Age_Band,
+					SELECT LA_Name, LA_Code, Event_Type_Cleaned, Age_Band,
 							DATEFROMPARTS(YEAR(Event_Start_Date), ((DATEPART(QUARTER, Event_Start_Date) - 1) * 3) + 1, 1) 
 					 AS Statistical_Reporting_Period_Start
-					FROM #filtered_requests_assessments_and_services
+					FROM #s2_1_filtered_requests_assessments_and_services
 					WHERE Event_Start_Date >= '2023-04-01') a
-			GROUP BY LA_Name, LA_Code, Modified_Working_Age_Band, Statistical_Reporting_Period_Start)
+			GROUP BY LA_Name, LA_Code, Age_Band, Statistical_Reporting_Period_Start)
 			AS context
 		ON calc.LA_Code = context.LA_Code 
-			AND calc.Modified_Working_Age_Band = context.Modified_Working_Age_Band
+			AND calc.Age_Band = context.Age_Band
 			AND calc.Statistical_Reporting_Period_Start= context.Statistical_Reporting_Period_Start;
 	
 ---- Stage 5.2 Count of event types for first responses and assessment types where they are assessments included in waiting time metric
-
+	DROP TABLE IF EXISTS #s5_2_contextual_part_1;
 	SELECT base.*,
 				ast.response_event_request,
 				ast.response_event_assessment,
@@ -623,35 +675,36 @@
 				ast.at_long,
 				ast.at_invalid_and_not_mapped,
 				ast.at_null
-	INTO #contextual_part_1
-	FROM #contextual_event_counts AS base
+	INTO #s5_2_contextual_part_1
+	FROM #s5_1_contextual_event_counts AS base
 		LEFT JOIN (SELECT
 						LA_Code,
 						stat_reporting_period_start_part1,
-						modified_next_assessment_Mod_Working_Age_Band,
+						s3_2_response_age_band,
 						-- Create event type counts for responses
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Request' THEN 1 ELSE 0 END) AS response_event_request,
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Assessment' THEN 1 ELSE 0 END) AS response_event_assessment,
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Service' THEN 1 ELSE 0 END) AS response_event_service,
+						SUM(CASE WHEN s3_2_response_event_type = 'Request'		THEN 1 ELSE 0 END) AS response_event_request,
+						SUM(CASE WHEN s3_2_response_event_type = 'Assessment'	THEN 1 ELSE 0 END) AS response_event_assessment,
+						SUM(CASE WHEN s3_2_response_event_type = 'Service'		THEN 1 ELSE 0 END) AS response_event_service,
 						-- Create assessment type counts when response is an assessment
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Assessment' AND modified_next_assessment_type = 'Short term assessment' THEN 1 ELSE 0 END) AS at_short,
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Assessment' AND modified_next_assessment_type = 'Long term assessment' THEN 1 ELSE 0 END) AS at_long,
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Assessment' AND modified_next_assessment_type = 'Invalid and not mapped' THEN 1 ELSE 0 END) AS at_invalid_and_not_mapped, -- Redundancy
-						SUM(CASE WHEN modified_next_assessment_event_type = 'Assessment' AND modified_next_assessment_type IS NULL THEN 1 ELSE 0 END) AS at_null -- Redundancy
-					FROM #wait_times_calc_1
+						SUM(CASE WHEN s3_2_response_event_type = 'Assessment' AND s3_2_response_assessment_type = 'Short term assessment'	THEN 1 ELSE 0 END) AS at_short,
+						SUM(CASE WHEN s3_2_response_event_type = 'Assessment' AND s3_2_response_assessment_type = 'Long term assessment'	THEN 1 ELSE 0 END) AS at_long,
+						SUM(CASE WHEN s3_2_response_event_type = 'Assessment' AND s3_2_response_assessment_type = 'Invalid and not mapped'	THEN 1 ELSE 0 END) AS at_invalid_and_not_mapped, -- Redundancy
+						SUM(CASE WHEN s3_2_response_event_type = 'Assessment' AND s3_2_response_assessment_type IS NULL						THEN 1 ELSE 0 END) AS at_null -- Redundancy
+					FROM #s4_1_person_level_waiting_times
 					WHERE part1_wait_time IS NOT NULL
-					AND modified_next_assessment_Mod_Working_Age_Band IN ('25 to 64', '65 and above')
+					AND s3_2_response_age_band IN ('25 to 64', '65 and above')
 					GROUP BY LA_Code,
 							stat_reporting_period_start_part1,
-							modified_next_assessment_Mod_Working_Age_Band
+							s3_2_response_age_band
 					) as ast
 				ON base.LA_Code = ast.LA_Code
 				AND base.Statistical_Reporting_Period_Start = ast.stat_reporting_period_start_part1
-				AND base.Modified_Working_Age_Band = ast.modified_next_assessment_Mod_Working_Age_Band
+				AND base.Age_Band = ast.s3_2_response_age_band
 	WHERE Metric = 'Wait time to first response';
 
 ---- Stage 5.3 Count of service types for services included in waiting time metric
 	
+	DROP TABLE IF EXISTS #s5_3_contextual_part_2;
 	SELECT base.*,
 			st.STS_ST_Max,
 			st.LTS_Nursing,
@@ -662,31 +715,31 @@
 			st.STS_Other,
 			st.Invalid_and_not_mapped,
 			st.[Null]
-	INTO #contextual_part_2
-	FROM #contextual_event_counts AS base
+	INTO #s5_3_contextual_part_2
+	FROM #s5_1_contextual_event_counts AS base
 		LEFT JOIN (SELECT
 						LA_Code,
 						stat_reporting_period_start_part2,
-						modified_next_service_Mod_Working_Age_Band,
-						SUM(CASE WHEN modified_next_service_type = 'Short term support: ST-Max'            THEN 1 ELSE 0 END) AS [STS_ST_Max],
-						SUM(CASE WHEN modified_next_service_type = 'Long term support: Nursing care'       THEN 1 ELSE 0 END) AS [LTS_Nursing],
-						SUM(CASE WHEN modified_next_service_type = 'Short term support: Ongoing low level' THEN 1 ELSE 0 END) AS [STS_Ongoing],
-						SUM(CASE WHEN modified_next_service_type = 'Long term support: Community'          THEN 1 ELSE 0 END) AS [LTS_Community],
-						SUM(CASE WHEN modified_next_service_type = 'Long term support: Residential care'   THEN 1 ELSE 0 END) AS [LTS_Residential],
-						SUM(CASE WHEN modified_next_service_type = 'Long term support: Prison'			   THEN 1 ELSE 0 END) AS [LTS_Prison],
-						SUM(CASE WHEN modified_next_service_type = 'Short term support: Other short term'  THEN 1 ELSE 0 END) AS [STS_Other],
-						SUM(CASE WHEN modified_next_service_type = 'Invalid and not mapped'				   THEN 1 ELSE 0 END) AS [Invalid_and_not_mapped], -- Redundancy
-						SUM(CASE WHEN modified_next_service_type is NULL								   THEN 1 ELSE 0 END) AS [Null] -- Redundancy
-					FROM #wait_times_calc_1
+						s3_3_service_age_band,
+						SUM(CASE WHEN s3_3_service_type = 'Short term support: ST-Max'				THEN 1 ELSE 0 END) AS [STS_ST_Max],
+						SUM(CASE WHEN s3_3_service_type = 'Long term support: Nursing care'			THEN 1 ELSE 0 END) AS [LTS_Nursing],
+						SUM(CASE WHEN s3_3_service_type = 'Short term support: Ongoing low level'	THEN 1 ELSE 0 END) AS [STS_Ongoing],
+						SUM(CASE WHEN s3_3_service_type = 'Long term support: Community'			THEN 1 ELSE 0 END) AS [LTS_Community],
+						SUM(CASE WHEN s3_3_service_type = 'Long term support: Residential care'		THEN 1 ELSE 0 END) AS [LTS_Residential],
+						SUM(CASE WHEN s3_3_service_type = 'Long term support: Prison'				THEN 1 ELSE 0 END) AS [LTS_Prison],
+						SUM(CASE WHEN s3_3_service_type = 'Short term support: Other short term'	THEN 1 ELSE 0 END) AS [STS_Other],
+						SUM(CASE WHEN s3_3_service_type = 'Invalid and not mapped'					THEN 1 ELSE 0 END) AS [Invalid_and_not_mapped], -- Redundancy
+						SUM(CASE WHEN s3_3_service_type is NULL										THEN 1 ELSE 0 END) AS [Null] -- Redundancy
+					FROM #s4_1_person_level_waiting_times
 					WHERE part2_wait_time IS NOT NULL
-					AND modified_next_service_Mod_Working_Age_Band IN ('25 to 64', '65 and above')
+					AND s3_3_service_age_band IN ('25 to 64', '65 and above')
 					GROUP BY LA_Code,
 							stat_reporting_period_start_part2,
-							modified_next_service_Mod_Working_Age_Band
+							s3_3_service_age_band
 					) as st
 				ON base.LA_Code = st.LA_Code
 				AND base.Statistical_Reporting_Period_Start = stat_reporting_period_start_part2
-				AND base.Modified_Working_Age_Band = modified_next_service_Mod_Working_Age_Band
+				AND base.Age_Band = s3_3_service_age_band
 	WHERE Metric = 'Wait time to first service';
 
 --###################################################################################
@@ -695,7 +748,7 @@
 	--- Athena dashboard outputs are resticted by specified date parameters
 
 	--- Set quarter parameter
-	DECLARE @Quarter AS VARCHAR(7) = 'Q4_2526';
+	DECLARE @Quarter AS VARCHAR(7) = 'Q1_2627';
 
 	--- Set Athena dashboard inclusion date parameters
 		-- Note: Statisitcal reporting periods are set to 1st day of finanical year quarters
@@ -705,13 +758,13 @@
 	
 
 	--- Set table name parameter
-	DECLARE @Metrics_Person_Level_DHSC	AS VARCHAR(256) = CONCAT('ASC_Sandbox.Waiting_Times_Metrics_Person_Level_', @Quarter, '_All_SRP');
-	DECLARE @Metrics_LA_Level_DHSC		AS VARCHAR(256) = CONCAT('ASC_Sandbox.Waiting_Times_Metrics_LA_Level_', @Quarter, '_All_SRP');
-	DECLARE @Metrics_LA_Level_Dashboard AS VARCHAR(256) = 'ASC_Sandbox.LA_PBI_Waiting_Times';
-	DECLARE @Diag_Part1_DHSC			AS VARCHAR(256) = CONCAT('ASC_Sandbox.Waiting_Times_Diag_Part1_', @Quarter, '_All_SRP');
-	DECLARE @Diag_Part1_Dashboard		AS VARCHAR(256) = 'ASC_Sandbox.LA_PBI_Waiting_Times_Diag_Part1';
-	DECLARE @Diag_Part2_DHSC			AS VARCHAR(256) = CONCAT('ASC_Sandbox.Waiting_Times_Diag_Part2_', @Quarter, '_All_SRP');
-	DECLARE @Diag_Part2_Dashboard		AS VARCHAR(256) = 'ASC_Sandbox.LA_PBI_Waiting_Times_Diag_Part2'
+	DECLARE @Metrics_Person_Level_DHSC	AS VARCHAR(256) = CONCAT('asc_sandbox.Waiting_Times_Metrics_Person_Level_', @Quarter, '_All_SRP');
+	DECLARE @Metrics_LA_Level_DHSC		AS VARCHAR(256) = CONCAT('asc_sandbox.Waiting_Times_Metrics_LA_Level_', @Quarter, '_All_SRP');
+	DECLARE @Metrics_LA_Level_Dashboard AS VARCHAR(256) = 'asc_sandbox.LA_PBI_Waiting_Times';
+	DECLARE @Diag_Part1_DHSC			AS VARCHAR(256) = CONCAT('asc_sandbox.Waiting_Times_Diag_Part1_', @Quarter, '_All_SRP');
+	DECLARE @Diag_Part1_Dashboard		AS VARCHAR(256) = 'asc_sandbox.LA_PBI_Waiting_Times_Diag_Part1';
+	DECLARE @Diag_Part2_DHSC			AS VARCHAR(256) = CONCAT('asc_sandbox.Waiting_Times_Diag_Part2_', @Quarter, '_All_SRP');
+	DECLARE @Diag_Part2_Dashboard		AS VARCHAR(256) = 'asc_sandbox.LA_PBI_Waiting_Times_Diag_Part2'
 
 	DECLARE @QUERY NVARCHAR(MAX);
 	SET @QUERY =
@@ -732,7 +785,7 @@
 				ROW_NUMBER() OVER (ORDER BY rp.Statistical_Reporting_Period_Start) as PBI_Axis_Order
 			FROM (
 				SELECT DISTINCT Statistical_Reporting_Period_Start, Statistical_Reporting_Period_End
-				FROM #wait_times_calc_la_both_parts
+				FROM #s4_2_la_level_waiting_times
 				WHERE Statistical_Reporting_Period_Start BETWEEN @LowerLimit AND @UpperLimit
 				) rp
 			 )	rp2;
@@ -741,14 +794,14 @@
 			DROP TABLE IF EXISTS '  + @Metrics_Person_Level_DHSC +';
 			SELECT *
 			INTO ' + @Metrics_Person_Level_DHSC +'
-			FROM #wait_times_calc_1;
+			FROM #s4_1_person_level_waiting_times;
 				
 		--- LA level waiting times
 			-- Output all Statistical Reporting Periods for DHSC
 				DROP TABLE IF EXISTS '  + @Metrics_LA_Level_DHSC +';
 				SELECT *
 				INTO ' + @Metrics_LA_Level_DHSC +'
-				FROM #wait_times_calc_la_both_parts;
+				FROM #s4_2_la_level_waiting_times;
 
 			-- Output selected Statistical Reporting Periods for Athena dashboard
 				DROP TABLE IF EXISTS '  + @Metrics_LA_Level_Dashboard +';
@@ -756,7 +809,7 @@
 					axis.PBI_Axis_Order,
 					axis.PBI_Axis_Name
 				INTO ' + @Metrics_LA_Level_Dashboard +'
-				FROM #wait_times_calc_la_both_parts base
+				FROM #s4_2_la_level_waiting_times base
 				LEFT JOIN #PBI_Axis AS axis
 					ON base.Statistical_Reporting_Period_Start = axis.Statistical_Reporting_Period_Start
 				WHERE base.Statistical_Reporting_Period_Start BETWEEN @LowerLimit AND @UpperLimit;
@@ -767,7 +820,7 @@
 				DROP TABLE IF EXISTS '  + @Diag_Part1_DHSC +';
 				SELECT *
 				INTO ' + @Diag_Part1_DHSC +'
-				FROM #contextual_part_1;
+				FROM #s5_2_contextual_part_1;
 
 			-- Output selected Statistical Reporting Periods for Athena dashboard
 				DROP TABLE IF EXISTS ' + @Diag_Part1_Dashboard +';
@@ -775,7 +828,7 @@
 					axis.PBI_Axis_Order,
 					axis.PBI_Axis_Name
 				INTO ' + @Diag_Part1_Dashboard +'
-				FROM #contextual_part_1 base
+				FROM #s5_2_contextual_part_1 base
 				LEFT JOIN #PBI_Axis AS axis
 					ON base.Statistical_Reporting_Period_Start = axis.Statistical_Reporting_Period_Start
 				WHERE base.Statistical_Reporting_Period_Start BETWEEN @LowerLimit AND @UpperLimit ;
@@ -785,7 +838,7 @@
 				DROP TABLE IF EXISTS '  + @Diag_Part2_DHSC +';
 				SELECT *
 				INTO ' + @Diag_Part2_DHSC +'
-				FROM #contextual_part_2;
+				FROM #s5_3_contextual_part_2;
 
 			-- Output selected Statistical Reporting Periods for Athena dashboard
 				DROP TABLE IF EXISTS ' + @Diag_Part2_Dashboard +';
@@ -793,7 +846,7 @@
 					axis.PBI_Axis_Order,
 					axis.PBI_Axis_Name
 				INTO ' + @Diag_Part2_Dashboard +'
-				FROM #contextual_part_2 base
+				FROM #s5_3_contextual_part_2 base
 				LEFT JOIN #PBI_Axis AS axis
 					ON base.Statistical_Reporting_Period_Start = axis.Statistical_Reporting_Period_Start
 				WHERE base.Statistical_Reporting_Period_Start BETWEEN @LowerLimit AND @UpperLimit ;';

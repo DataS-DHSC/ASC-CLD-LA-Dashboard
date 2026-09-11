@@ -1,8 +1,8 @@
 # Data cleaning, mapping and deriving new fields
 
-> Processing steps applied in [`GetDerivedFields`](/Stored_procedures/create_GetDerivedFields_procedure.sql) procedure.
+> Processing steps applied in [`GetONSDeaths`](/Main_tables/stored_procedures/create_GetONSDeaths_procedure.sql) procedure and [`GetDerivedFields`](/Main_tables/stored_procedures/create_GetDerivedFields_procedure.sql) procedure.
 
-[Back to Overview](/Main_tables/docs/methodology/1-overview.md)
+[Back to Overview](/Main_tables/docs/methodology/0-overview.md)
 
 ## Cleaning and mapping
 
@@ -29,17 +29,47 @@ Mapping tables are reviewed and updated quarterly if new invalid values are rece
 
 New fields are derived, including:
 
-- **Corrected event end dates**
-  <br> Populated with date of death where present and preceding the recorded end date. (See also [Deduplication step 2](/Main_tables/docs/methodology/6-deduplication.md#step-2--cropping-and-deduplicating-service-records).)
+- [**Enhanced date of death**](/Main_tables/docs/methodology/dates-of-death.md) - `Der_Date_of_Death`
+  <br> Populated with ONS mortality dataset date of death where an NHS number present, else CLD date of death. Derived early on in pipeline then used in place of CLD date of death.
 
-- **A combined person ID**
+- **Corrected event end dates** - `Der_Event_End_Date`
+  <br> Populated with (enhanced) date of death where present and preceding the recorded end date. (See also [Deduplication step 2](/Main_tables/docs/methodology/6-deduplication.md#step-2--cropping-and-deduplicating-service-records).)
+
+- **A combined person ID** - `Der_NHS_LA_Combined_Person_ID`
   <br> Traced NHS number if present, else LA-provided NHS number, else LA person ID. Row excluded if no person ID present.
 
+- **Latest age and age band** - `Der_Latest_Age` / `Der_Age_Band` / `Der_Working_Age_Band`
+  <br> Age and corresponding age band at latest point in an event - at event end date when populated, else at reporting period end date for ongoing services. Derived from birth year and month rather than exact date of birth (which is not available to DHSC), assuming birth on first day of month.
+
+- **Event outcome hierarchy**
+
+  Assigned as follows, in line with the hierarchy in the ASC CLD guidance:
+
+  ```
+    Event_Outcome_Hierarchy Event_Outcome_Spec
+    1	Progress to reablement/ST-Max
+    2	Progress to assessment, review or reassessment
+    3	Release 1 specification only: Not mapped
+    4	Progress to support planning or services
+    5	Continuation of support or services
+    6	Admitted to hospital
+    7	NFA: Responsibility moved to another local authority
+    8	NFA: Referral to NHS services or NHS funded social care
+    9	NFA: Self-funded client or under 12wk disregard
+    10	NFA: Information and advice or signposting
+    11	NFA: Referral to other service within the local authority
+    12	NFA: Support declined
+    13	NFA: Deceased
+    14	NFA: Support ended as planned
+    15	NFA: Support ended for other reason
+    16	NFA: No services offered for other reason
+    17	NFA: Other
+  ```
+
 - **Higher‑level groupings**
-  <br> Derived for ethnicity, event outcome, service type and review reason ("review type").
+  <br> Derived for ethnicity, event outcome, service type and review reason ("review type"). Logic and mapping tables for higher-level grouping derivations provided below.
 
-  Mapping tables for higher-level grouping derivation are provided below (tab-separated).
-
+  `Ethnicity_Grouped`
   ```
   Ethnicity_Cleaned	Ethnicity_Grouped
   Asian or Asian British: Any other Asian background	Asian or Asian British
@@ -65,7 +95,8 @@ New fields are derived, including:
   White: Irish	White
   White: Roma	White
   ```
-  
+
+  `Event_Outcome_Grouped`
   ```
   Event_Outcome_Cleaned	Event_Outcome_Grouped
   Admitted to hospital	Admitted to hospital
@@ -88,6 +119,7 @@ New fields are derived, including:
   Release 1 specification only: Not mapped	Release 1 specification only: Not mapped
   ```
 
+  `Service_Type_Grouped`
   ```
   Service_Type_Cleaned	Service_Type_Grouped
   Invalid and not mapped	Unknown
@@ -101,7 +133,11 @@ New fields are derived, including:
   Unpaid carer support: Direct to unpaid carer	Unpaid carer support
   Unpaid carer support: Support involving the person cared-for	Unpaid carer support
   ```
+  
+  `Review_Type`
+
+  Derived for review events from the cleaned review reason field and grouped as 'Planned review of long term support', 'Unplanned', 'Review of short term support', or 'Review Type Unknown'. Non-review events are assigned NULL.
 
 <br>
 
-[Go to Deduplication](/Main_tables/docs/methodology/6-deduplication.md)
+[Go to Deduplication](/Main_tables/docs/methodology/4-deduplication.md)

@@ -70,7 +70,8 @@ CREATE PROCEDURE ASC_Sandbox.Create_ASCOF3D_2425_Onwards
   @InputTable AS NVARCHAR(100),
   @InputTable_PersonDetails AS NVARCHAR(100),
   @OutputTable1 AS NVARCHAR(100),
-  @OutputTable2 AS NVARCHAR(100)
+  @OutputTable2 AS NVARCHAR(100),
+  @OutputTable_RLS AS NVARCHAR(100)
 
 AS         
   DECLARE @Query NVARCHAR(MAX)
@@ -80,6 +81,7 @@ AS
 
   SET @Query = N'DROP TABLE IF EXISTS ' + @OutputTable1 + '; 
                 DROP TABLE IF EXISTS ' + @OutputTable2 + '; 
+                DROP TABLE IF EXISTS ' + @OutputTable_RLS + '; 
                 CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable + ';
 				        CREATE SYNONYM ASC_Sandbox.InputTable_PersonDetails FOR ' + @InputTable_PersonDetails +';'
   EXEC(@Query)
@@ -138,7 +140,7 @@ AS
     SELECT 
       a.*,
 	    b.Der_Birth_Date AS Der_Birth_Date_Latest,
-	    b.Date_of_Death AS Date_of_Death_Latest,
+	    b.Der_Date_of_Death AS Date_of_Death_Latest,
       CASE
         WHEN b.Der_Birth_Date IS NULL THEN NULL
         ELSE FLOOR(DATEDIFF(DAY, b.Der_Birth_Date, @ReportingPeriodEndDate) / 365.25)  
@@ -250,27 +252,61 @@ AS
       Der_NHS_LA_Combined_Person_ID;
 
 
-    --Select these records into the final table from which ASCOF numerators and denominators are selected
-    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Final;
+    --Join the minimum rank to the service records (might be multiple services per person if they have different service components but the same rank)
+    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Ranked_Joined;
 
-    SELECT
-      DISTINCT 
+    SELECT DISTINCT
       a.LA_Code,
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
       a.Der_Age_Band_Reporting_End,
       a.Service_Type,
       a.Service_Component,
-      a.[Delivery_Mechanism]
-    INTO #ASCOF_3D_Clients_Final
+      a.Delivery_Mechanism,
+      a.LA_Person_Unique_Identifier
+    INTO #ASCOF_3D_Clients_Ranked_Joined
     FROM #ASCOF_3D_Clients_Join a
     INNER JOIN #ASCOF_3D_Clients_MinRank b
       ON a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
       AND a.LA_Code = b.LA_Code
       AND a.[Hierarchy] = b.[Rank]
     WHERE
-      b.[Rank] is not NULL
-      AND a.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown')
+    b.[Rank] is not NULL
+    AND a.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown')
+
+    --For the record level sharing report, where one Der_NHS_LA_Combined_ID is associated with more than one 
+    --  LA_Person_Unique_Identifier the LA IDs are concatenated together to form a list and outputted on one row
+    DROP TABLE IF EXISTS #LA_IDs
+
+    SELECT 
+      LA_Code, 
+      Der_NHS_LA_Combined_Person_ID,
+      STRING_AGG(CONVERT(NVARCHAR(Max), LA_Person_Unique_Identifier), ', ')
+        WITHIN GROUP (ORDER BY LA_Person_Unique_Identifier) AS LA_Person_Unique_Identifier
+    INTO #LA_IDs 
+    FROM #ASCOF_3D_Clients_Ranked_Joined
+    GROUP BY 
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID
+
+    --Join the LA IDs onto the services table
+    DROP TABLE IF EXISTS #ASCOF_3D_Clients_Final;
+
+    SELECT
+      DISTINCT
+      s.LA_Code,
+      s.LA_Name,
+      s.Der_NHS_LA_Combined_Person_ID,
+      s.Der_Age_Band_Reporting_End,
+      s.Service_Type,
+      s.Service_Component,
+      s.[Delivery_Mechanism],
+      i.LA_Person_Unique_Identifier
+    INTO #ASCOF_3D_Clients_Final
+    FROM #ASCOF_3D_Clients_Ranked_Joined s
+    LEFT JOIN #LA_IDs i
+    ON s.LA_Code = i.LA_Code AND 
+      s.Der_NHS_LA_Combined_Person_ID = i.Der_NHS_LA_Combined_Person_ID
 
     ------------------------------------------------------
     ---- Create numerators, denominators and unknowns ----
@@ -281,6 +317,7 @@ AS
     SELECT
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       CASE WHEN Der_Age_Band_Reporting_End IS NULL THEN 'Total' ELSE Der_Age_Band_Reporting_End END AS [Group],
       '1a - The proportion of clients who use services who receive self-directed support (%)' AS [Description],
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
@@ -296,6 +333,7 @@ AS
     GROUP BY
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Der_Age_Band_Reporting_End)
 
     UNION ALL 
@@ -303,6 +341,7 @@ AS
     SELECT
       LA_Code,
       LA_Name,
+      LA_Person_unique_Identifier,
       CASE WHEN Der_Age_Band_Reporting_End IS NULL THEN 'Total' ELSE Der_Age_Band_Reporting_End END AS [Group],
       '2a - The proportion of clients who use services who receive direct payments (%)' AS [Description],
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
@@ -316,6 +355,7 @@ AS
     GROUP BY
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Der_Age_Band_Reporting_End);
 
     -- Remove unknowns from output table (but still included as part of the totals)
@@ -372,7 +412,7 @@ AS
     --three bespoke combinations of event scenarios below are allowed to make up the Carers cohort
       AND ((Service_Type_Cleaned IS NULL AND Event_Outcome_Cleaned = 'NFA: Information and advice or signposting')
       OR (Service_Type_Cleaned = 'Unpaid carer support: Direct to unpaid carer' OR Service_Type_Cleaned = 'Unpaid carer support: Support involving the person cared-for')
-      OR (Event_Type IN ('Assessment','Review') AND Service_Type_Cleaned IS NULL))
+      OR (Event_Type_Cleaned IN ('Assessment','Review') AND Service_Type_Cleaned IS NULL))
 
     ----------------------------------------------------
     ---- Case into the different support categories ----
@@ -407,16 +447,16 @@ AS
       WHEN Service_Type = 'Unpaid carer support: Support involving the person cared-for' 
       THEN 'No Direct Support Provided to Carer'
 
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome NOT LIKE 'NFA: Information and advice or signposting' 
+      WHEN Event_Type_Cleaned IN ('Assessment', 'Review') AND Event_Outcome NOT LIKE 'NFA: Information and advice or signposting' 
       THEN 'No Direct Support Provided to Carer'
         
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome IS NULL 
+      WHEN Event_Type_Cleaned IN ('Assessment', 'Review') AND Event_Outcome IS NULL 
       THEN 'No Direct Support Provided to Carer'
         
-      WHEN Event_Type IN ('Assessment', 'Review') AND Event_Outcome = 'NFA: Information and advice or signposting' 
+      WHEN Event_Type_Cleaned IN ('Assessment', 'Review') AND Event_Outcome = 'NFA: Information and advice or signposting' 
       THEN 'Information, Advice and Other Universal Services / Signposting'
         
-      WHEN Event_Type = 'Request' 
+      WHEN Event_Type_Cleaned = 'Request' 
       THEN 'Information, Advice and Other Universal Services / Signposting'
         
       END AS 'Support_Provided'
@@ -462,24 +502,60 @@ AS
         LA_Name,
         Der_NHS_LA_Combined_Person_ID
     
-
-    --Select these records into the final table from which ASCOF numerators and denominators are selected     
-    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Final
+    --Join the minimum rank to the service records (might be multiple services per person if they have different service components but the same rank)
+    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Ranked_Joined;
 
     SELECT DISTINCT
       a.LA_Code,
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
-      b.Der_Age_Band_Reporting_End, 
-      a.Support_Provided
-    INTO #ASCOF_3D_Carers_Final
+      b.Der_Age_Band_Reporting_End,
+      a.Support_Provided,
+      a.LA_Person_Unique_Identifier
+    INTO #ASCOF_3D_Carers_Ranked_Joined
     FROM #ASCOF_3D_Carers_Join a
     INNER JOIN #ASCOF_3D_Carers_MinRank b
-    ON a.LA_Code = b.LA_Code
-      AND a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
-      AND a.Hierarchy = b.[Rank]
-    WHERE b.[Rank] IS NOT NULL
-    AND b.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown') --added to remove under 18s but include unknowns (just for totals)
+      ON a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID
+      AND a.LA_Code = b.LA_Code
+      AND a.[Hierarchy] = b.[Rank]
+    WHERE
+    b.[Rank] is not NULL
+    AND b.Der_Age_Band_Reporting_End IN ('18 to 64', '65 and above', 'Unknown')
+
+
+    --For the record level sharing report, where one Der_NHS_LA_Combined_ID is associated with more than one 
+    --  LA_Person_Unique_Identifier the LA IDs are concatenated together to form a list and outputted on one row
+    DROP TABLE IF EXISTS #LA_IDs_Carers
+
+    SELECT 
+      LA_Code, 
+      Der_NHS_LA_Combined_Person_ID,
+      STRING_AGG(CONVERT(NVARCHAR(Max), LA_Person_Unique_Identifier), ', ')
+        WITHIN GROUP (ORDER BY LA_Person_Unique_Identifier) AS LA_Person_Unique_Identifier
+    INTO #LA_IDs_Carers
+    FROM #ASCOF_3D_Carers_Ranked_Joined
+    GROUP BY 
+      LA_Code,
+      Der_NHS_LA_Combined_Person_ID
+
+    --Join the LA IDs onto the services table
+    DROP TABLE IF EXISTS #ASCOF_3D_Carers_Final;
+
+    SELECT
+      DISTINCT
+      s.LA_Code,
+      s.LA_Name,
+      s.Der_NHS_LA_Combined_Person_ID,
+      s.Der_Age_Band_Reporting_End,
+      s.Support_Provided,
+      i.LA_Person_Unique_Identifier
+    INTO #ASCOF_3D_Carers_Final
+    FROM #ASCOF_3D_Carers_Ranked_Joined s
+    LEFT JOIN #LA_IDs_Carers i
+    ON s.LA_Code = i.LA_Code AND 
+      s.Der_NHS_LA_Combined_Person_ID = i.Der_NHS_LA_Combined_Person_ID
+
+
 
     ------------------------------------------------------
     ---- Create numerators, denominators and unknowns ----
@@ -490,6 +566,7 @@ AS
     SELECT
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       CASE WHEN Der_Age_Band_Reporting_End IS NULL THEN 'Total' ELSE Der_Age_Band_Reporting_End END AS [Group],
       '1b - The proportion of carers who use services who receive self-directed support (%)' AS [Description],
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
@@ -504,6 +581,7 @@ AS
     GROUP BY
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Der_Age_Band_Reporting_End)
 
     UNION ALL 
@@ -511,6 +589,7 @@ AS
     SELECT
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       CASE WHEN Der_Age_Band_Reporting_End IS NULL THEN 'Total' ELSE Der_Age_Band_Reporting_End END AS [Group],
       '2b - The proportion of carers who use services who receive direct payments (%)' AS [Description],
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator,
@@ -524,6 +603,7 @@ AS
     GROUP BY
       LA_Code,
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Der_Age_Band_Reporting_End)
 
 
@@ -567,14 +647,15 @@ AS
     FROM #ASCOF_3D_Carers_Output
     
 
-    --Format output for dashboard
+    ----------- 1. Output table for record level sharing report ----------
     --Join with list of all LAs to ensure LAs with missing data are included in the output
-    DROP TABLE IF EXISTS #OutputTable1  
+    DROP TABLE IF EXISTS #OutputTable_RLS
 
     SELECT 
       FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
       r.LA_Code, 
       r.LA_Name,
+      f.LA_Person_Unique_Identifier,
       CASE 
         WHEN d.[Description] LIKE '1a%' OR d.[Description] LIKE '2a%' THEN 'ASCOF 3D (Clients)' 
         WHEN d.[Description] LIKE '1b%' OR d.[Description] LIKE '2b%' THEN 'ASCOF 3D (Carers)' 
@@ -582,9 +663,8 @@ AS
       d.[Description],
       g.[Group],
       COALESCE(f.Numerator,0) AS Numerator,
-      COALESCE(f.Denominator,0) AS Denominator,
-      COALESCE(ROUND((CAST(f.Numerator AS FLOAT) / CAST(f.Denominator AS FLOAT)) * 100, 1),0) AS [Outcome]
-    INTO #OutputTable1
+      COALESCE(f.Denominator,0) AS Denominator
+    INTO #OutputTable_RLS
     FROM ASC_SANDBOX.REF_ONS_Codes_LA_Region_Lookup r
     CROSS JOIN 
     (SELECT DISTINCT [Description] FROM #ASCOF_3D_Final) d
@@ -598,7 +678,30 @@ AS
     ORDER BY  LA_Name, [Description]
 
 
-    --Format unknowns for dashboard
+    ---------- 2. Aggregated table for main dashboard ASCOF page ----------
+    DROP TABLE IF EXISTS #OutputTable1
+
+    SELECT 
+      Reporting_Period,
+      LA_Code,
+      LA_Name,
+      Measure,
+      [Description],
+      [Group],
+      SUM(Numerator) AS Numerator,
+      SUM(Denominator) AS Denominator,
+      COALESCE(ROUND((CAST(SUM(Numerator) AS FLOAT) / NULLIF(CAST(SUM(Denominator) AS FLOAT), 0)) * 100, 1),0) AS [Outcome]
+    INTO #OutputTable1
+    FROM #OutputTable_RLS
+    GROUP BY
+      Reporting_Period,
+      LA_Code,
+      LA_Name,
+      Measure,
+      [Description],
+      [Group]
+
+    ---------- 3. Unknowns and invalids for main dashboard ----------
     --Join with list of all LAs to ensure LAs without any unknows are still included in the output with 0
     DROP TABLE IF EXISTS #OutputTable2
     SELECT 
@@ -626,6 +729,7 @@ AS
     FULL JOIN ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup b   --To output all LAs despite missing data
       ON a.LA_Code = b.LA_Code
 
+
     --Store outputs
     SET @Query = 'SELECT * INTO ' + @OutputTable1 + ' FROM #OutputTable1'
     EXEC(@Query)
@@ -633,19 +737,23 @@ AS
     SET @Query = 'SELECT * INTO ' + @OutputTable2 + ' FROM #OutputTable2'
     EXEC(@Query)
 
+    SET @Query = 'SELECT * INTO ' + @OutputTable_RLS + ' FROM #OutputTable_RLS'
+    EXEC(@Query)
 
     DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+    DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_PersonDetails
 
 GO
 
 -----Example execution
 /*
 EXEC ASC_Sandbox.Create_ASCOF3D_2425_Onwards
-  @ReportingPeriodStartDate = '2024-04-01',
-  @ReportingPeriodEndDate = '2025-03-31', 
-  @InputTable = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions',
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions_Latest_Person_Data_2425',
+  @ReportingPeriodStartDate = '2025-04-01',
+  @ReportingPeriodEndDate = '2026-03-31', 
+  @InputTable = 'DHSC_Reporting.CLD_230401_260331_JoinedSubmissions_V2',
+  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_260331_JoinedSubmissions_V2_Latest_Person_Data',
   @OutputTable1 = 'ASC_Sandbox.ASCOF_3D',
-  @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk'
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_3D_Unk',
+  @OutputTable_RLS = 'ASC_Sandbox.ASCOF_3D_RLS'
 */
  

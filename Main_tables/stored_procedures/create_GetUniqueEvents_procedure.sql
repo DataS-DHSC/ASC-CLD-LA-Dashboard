@@ -29,14 +29,14 @@ GO
 CREATE PROCEDURE ASC_Sandbox.GetUniqueEvents
   @Submissions AS NVARCHAR(256),
   @InputTable SYSNAME = NULL,
-  @OutputTable AS NVARCHAR(50)
+  @OutputTable AS NVARCHAR(100)
 AS
   SET NOCOUNT ON;
   DECLARE @Query NVARCHAR(MAX)
 
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_GetUniqueEvents
   SET @Query = 'DROP TABLE IF EXISTS ' + @OutputTable + ';
-                CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable
+                CREATE SYNONYM ASC_Sandbox.InputTable_GetUniqueEvents FOR ' + @InputTable
 
   EXEC(@Query)
 
@@ -44,7 +44,7 @@ AS
   DROP TABLE IF EXISTS #InputTable;
   SELECT *
   INTO #InputTable
-  FROM ASC_Sandbox.InputTable;
+  FROM ASC_Sandbox.InputTable_GetUniqueEvents;
 
   ALTER TABLE #InputTable ALTER COLUMN Unit_Cost NUMERIC(18, 2) NULL;
   ALTER TABLE #InputTable ALTER COLUMN Unit_Cost VARCHAR(18) NULL;
@@ -66,10 +66,10 @@ AS
         ROW_NUMBER() OVER (
           PARTITION BY
             Der_Unique_Event_Ref,
-            (CASE WHEN Event_Type like '%service%' THEN ISNULL(Delivery_Mechanism_Cleaned, '') END),
-            (CASE WHEN Event_Type like '%service%' THEN ISNULL(Unit_Cost, '') END),
-            (CASE WHEN Event_Type like '%service%' THEN ISNULL(Cost_Frequency_Unit_Type_Cleaned, '') END),
-            (CASE WHEN Event_Type like '%service%' THEN ISNULL(Planned_units_per_week, '') END)
+            (CASE WHEN Event_Type_Cleaned = 'Service' THEN ISNULL(Delivery_Mechanism_Cleaned, '') END),
+            (CASE WHEN Event_Type_Cleaned = 'Service' THEN ISNULL(Unit_Cost, '') END),
+            (CASE WHEN Event_Type_Cleaned = 'Service' THEN ISNULL(Cost_Frequency_Unit_Type_Cleaned, '') END),
+            (CASE WHEN Event_Type_Cleaned = 'Service' THEN ISNULL(Planned_units_per_week, '') END)
           ORDER BY
             (CASE WHEN Der_Event_End_Date IS NULL THEN '9999-01-01' ELSE Der_Event_End_Date END) DESC,
             (CASE WHEN Event_Outcome_Hierarchy IS NULL THEN 999 ELSE Event_Outcome_Hierarchy END) ASC,
@@ -119,7 +119,10 @@ AS
     Ethnicity_Raw,
     Ethnicity_Cleaned,
     Ethnicity_Grouped,
-    Date_of_Death,
+    Date_of_Death_Raw,
+    Date_of_Death_ONS,
+    Death_Reg_Date,
+    Der_Date_of_Death,
     Client_Type_Raw,
     Client_Type_Cleaned,
     Primary_Support_Reason_Raw,
@@ -137,7 +140,8 @@ AS
     Dementia,
     Client_Funding_Status_Raw,
     Client_Funding_Status_Cleaned,
-    Event_Type,
+    Event_Type_Raw,
+    Event_Type_Cleaned,
     Event_Start_Date,
     Event_End_Date_Raw,
     Der_Event_End_Date,
@@ -225,7 +229,7 @@ AS
   SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable;';
 
   EXEC(@Query);
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable;
+  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_GetUniqueEvents;
 
 GO
 

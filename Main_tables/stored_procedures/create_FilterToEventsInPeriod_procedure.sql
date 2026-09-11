@@ -19,14 +19,14 @@ GO
 
 CREATE PROCEDURE ASC_Sandbox.FilterToEventsInPeriod
   @InputTable SYSNAME = NULL,
-  @OutputTable AS NVARCHAR(50)
+  @OutputTable AS NVARCHAR(100)
 AS
   SET NOCOUNT ON;
   DECLARE @Query NVARCHAR(MAX)
 
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_FilterToEventsInPeriod
   SET @Query = 'DROP TABLE IF EXISTS ' + @OutputTable + ';
-                CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable
+                CREATE SYNONYM ASC_Sandbox.InputTable_FilterToEventsInPeriod FOR ' + @InputTable
   EXEC(@Query)
 
   -- Filter to events which fall within the period of interest, accounting for date of death
@@ -39,13 +39,13 @@ AS
       -- Check for date of death: when date of death is between event start and end dates
       -- or when event end date is null, replace event end date with date of death
       CASE 
-        WHEN (Date_of_Death BETWEEN Event_Start_Date AND Event_End_Date)
-        OR (Date_of_Death > Event_Start_Date AND Event_End_Date IS NULL) THEN Date_of_Death 
+        WHEN (Der_Date_of_Death BETWEEN Event_Start_Date AND Event_End_Date)
+        OR (Der_Date_of_Death > Event_Start_Date AND Event_End_Date IS NULL) THEN Der_Date_of_Death 
         ELSE Event_End_Date
       END AS Der_Event_End_Date,
       Event_End_Date AS Event_End_Date_Raw
-    FROM ASC_Sandbox.InputTable
-  ) a 
+    FROM ASC_Sandbox.InputTable_FilterToEventsInPeriod
+  ) a
   WHERE
   -- select requests, assessments, reviews which start before the end of the period and end withing the reporting period
   ((Event_Type NOT LIKE '%service%' 
@@ -57,8 +57,8 @@ AS
   AND Event_Start_Date <= Ref_Period_End_Date))
   AND
   -- select records where date of death is null or greater than the reporting period start and event start dates
-  (Date_of_Death IS NULL
-  OR (Date_of_Death >= Ref_Period_Start_Date AND Date_of_Death >= Event_Start_Date));
+  (Der_Date_of_Death IS NULL
+  OR (Der_Date_of_Death >= Ref_Period_Start_Date AND Der_Date_of_Death >= Event_Start_Date));
 
   -- Drop original Event_End_Date field to highlight distinction between "_Raw" / "Der_" fields
   ALTER TABLE #OutputTable
@@ -66,7 +66,7 @@ AS
 
   SET @Query = 'SELECT * INTO ' + @OutputTable + ' FROM #OutputTable'
   EXEC(@Query)
-  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
+  DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_FilterToEventsInPeriod
 
 GO
 

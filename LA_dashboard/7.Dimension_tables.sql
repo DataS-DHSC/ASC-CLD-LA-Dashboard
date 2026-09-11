@@ -6,8 +6,8 @@
 
 --------------------------------------
 -------------CALENDAR DIM TABLE-------
-DECLARE @ReportingPeriodStartDate AS DATE = '2025-04-01' --Update to cover full 12 month reporting period
-DECLARE @ReportingPeriodEndDate AS DATE = '2026-03-31';
+DECLARE @ReportingPeriodStartDate AS DATE = '2025-07-01' --Update to cover full 12 month reporting period
+DECLARE @ReportingPeriodEndDate AS DATE = '2026-06-30';
 
 DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Calendar_Dim;
 
@@ -85,14 +85,15 @@ DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Geography_Dim;
 SELECT 
   LA_Code,
 	LA_Name,
-	Region
+	Region,
+  ADASS_Region_April_2024
 INTO ASC_Sandbox.LA_PBI_Geography_Dim
 FROM ASC_Sandbox.REF_ONS_Codes_LA_Region_Lookup;
 
 --Add in information for national
 
 INSERT INTO ASC_Sandbox.LA_PBI_Geography_Dim 
-VALUES	('99999', 'England', 'National');
+VALUES	('99999', 'England', 'National', 'National');
 
 
 ---------------------------

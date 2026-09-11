@@ -18,7 +18,7 @@ The pre-processed data table is produced using the create_main_table_for_12mo_pe
 
 --Declare the input table variable
 DECLARE @InputTable AS NVARCHAR(MAX);
-SET @InputTable = 'DHSC_Reporting.CLD_250401_260331_SingleSubmissions';  --Update with the latest single submission data table 
+SET @InputTable = 'DHSC_Reporting.CLD_250701_260630_SingleSubmissions';  --Update with the latest single submission data table 
 
 --Declare a variable to hold the dynamic SQL query
 DECLARE @SQLQuery AS NVARCHAR(MAX);
@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS ASC_Sandbox.LA_PBI_Master_Table
 
 SELECT 
   *,
+  Event_Type_Cleaned AS Event_Type,
   Gender_Cleaned AS Gender,
   Ethnicity_Cleaned AS Ethnicity,
   Service_Type_Cleaned AS Service_Type,

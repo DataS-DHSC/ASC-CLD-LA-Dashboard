@@ -15,7 +15,7 @@ The breakdowns that are processed are:
   Der_Birth_Month,
   Der_Age_End_Of_Period,
   Der_Working_Age_Band_End_Of_Period,
-  Date_of_Death,
+  Der_Date_of_Death,
   Has_Unpaid_Carer,
   Primary_Support_Reason,
   Client_Funding_Status
@@ -67,7 +67,7 @@ AS
       COALESCE(a.Der_Event_End_Date, '9999-01-01') AS Der_Event_End_Date,
       a.Der_Birth_Year,
       a.Der_Birth_Month,
-      a.Date_of_Death,
+      a.Der_Date_of_Death,
       a.Ref_Period_End_Date,
       COALESCE(a.Client_Type_Cleaned, 'Invalid and not mapped') AS Client_Type_Cleaned,
       COALESCE(a.Primary_Support_Reason_Cleaned, 'Invalid and not mapped') AS Primary_Support_Reason_Cleaned,
@@ -78,7 +78,7 @@ AS
       COALESCE(a.Accommodation_Status_Cleaned, 'Invalid and not mapped') AS Accommodation_Status_Cleaned,
       COALESCE(uc.Has_Unpaid_Carer_Cleaned, 'Invalid and not mapped') AS Has_Unpaid_Carer_Cleaned, --Only field not already cleaned
       COALESCE(a.Gender_Cleaned, 'Invalid and not mapped') AS Gender_Cleaned,
-      COALESCE(a.Event_Type, 'Invalid and not mapped') AS Event_Type,
+      COALESCE(a.Event_Type_Cleaned, 'Invalid and not mapped') AS Event_Type_Cleaned,
       COALESCE(a.Service_Type_Cleaned, 'Invalid and not mapped') AS Service_Type_Cleaned,
       COALESCE(a.Service_Type_Grouped, 'Invalid and not mapped') AS Service_Type_Grouped,
       COALESCE(a.Service_Component_Cleaned, 'Invalid and not mapped') AS Service_Component_Cleaned,
@@ -270,7 +270,7 @@ AS
         SELECT
           a.LA_Code,
           a.Der_NHS_LA_Combined_Person_ID,
-          b.Event_Type,
+          b.Event_Type_Cleaned,
           b.Service_Type_Cleaned,
           b.Service_Component_Cleaned,
           c.Service_Type_Hierarchy,
@@ -278,7 +278,7 @@ AS
           b.Der_Event_End_Date
         INTO #Unknown_IDs_Service_Details
         FROM #Unknown_Acc_Status_IDs a
-        LEFT JOIN  (select * from #CLD where Event_Type = 'Service') b
+        LEFT JOIN  (select * from #CLD where Event_Type_Cleaned = 'Service') b
         ON a.Der_NHS_LA_Combined_Person_ID = b.Der_NHS_LA_Combined_Person_ID AND 
         a.LA_Code = b.LA_Code
         LEFT JOIN #REF_Service_Type c
@@ -828,24 +828,24 @@ AS
       SELECT 
         LA_Code,
         Der_NHS_LA_Combined_Person_ID,
-	    Date_of_Death,
+	      Der_Date_of_Death,
         DENSE_RANK() OVER (
           PARTITION BY 
             LA_Code,
             Der_NHS_LA_Combined_Person_ID
           ORDER BY
             CASE --prioritise non-NULL entries
-              WHEN Date_of_Death IS NULL THEN 1
+              WHEN Der_Date_of_Death IS NULL THEN 1
               ELSE 2
             END DESC,
 		    Ref_Period_End_Date DESC, -- prioritise the later submissions
-		    Date_of_Death DESC -- prioritise later dates of death
+		    Der_Date_of_Death DESC -- prioritise later dates of death
         ) AS Rn
       FROM #CLD)
     SELECT DISTINCT 
       LA_Code,
       Der_NHS_LA_Combined_Person_ID,
-      Date_of_Death
+      Der_Date_of_Death
     INTO #Death_Row1
     FROM LatestDeath
     WHERE Rn = 1
@@ -1298,7 +1298,7 @@ AS
       END AS Der_Birth_Date,
       c.Der_Age_End_Of_Period,
       c.Der_Working_Age_Band_End_Of_Period,
-      h.Date_of_Death,
+      h.Der_Date_of_Death,
       e.Has_Unpaid_Carer,
       g.Primary_Support_Reason,
       i.Client_Funding_Status

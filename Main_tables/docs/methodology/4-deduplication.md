@@ -1,10 +1,10 @@
 # Deduplication
 
-> Processing steps applied in [`GetDerivedFields`](/Stored_procedures/create_GetDerivedFields_procedure.sql) and [`GetUniqueEvents`](/Stored_procedures/create_GetUniqueEvents_procedure.sql) procedures.
+> Processing steps applied in [`GetDerivedFields`](/Main_tables/stored_procedures/create_GetDerivedFields_procedure.sql) and [`GetUniqueEvents`](/Main_tables/stored_procedures/create_GetUniqueEvents_procedure.sql) procedures.
 
 This section documents the three-stage deduplication process applied when joining submissions. The same process is applied for single submissions, though some steps differ or don't apply, as described below.
 
-[Back to Overview](/Main_tables/docs/methodology/1-overview.md)
+[Back to Overview](/Main_tables/docs/methodology/0-overview.md)
 
 ## Step 1 – Identifying unique events
 
@@ -38,8 +38,11 @@ For each unique event, an event reference (of the form `[LA code]_[event #]`) is
 **Notes:**
 
 - These combinations of distinguishing fields for each event type were arrived at following discussions with the local authority analytical working group and extensive experimentation to understand which fields may change between submissions for the same event.
-- Raw values are used, except for the derived event end date and combined person ID.
-- `Event reference number` is not used (not currently suitable for use).
+
+- Cleaned values are used, to ensure effective deduplication of records with values updated from release 1 to release 2. (N.B. Until Jul 2026 raw values were used.)
+
+- `Event reference number` is not used as it is i) not mandatory and ii) not currently a reliable identifier of unique events across submissions (e.g. where created at point of extraction from case management systems) and would lead to overcounting.
+
 - This should be considered a DHSC definition of a unique event, rather than a true unique event.
 
 
@@ -73,28 +76,7 @@ For each unique event, **one original record** is retained using the following c
 
 _\* Reference period start date is not included as it is redundant in addition to reference period end date.
 <br> \*\* Event end dates left erroneously open in the last reference period will take precedence.
-<br> \*\*\* Event outcome sorted according to the hierarchy in table below:_
-
-```
-    Event_Outcome_Hierarchy Event_Outcome_Spec
-    1	Progress to reablement/ST-Max
-    2	Progress to assessment, review or reassessment
-    3	Release 1 specification only: Not mapped
-    4	Progress to support planning or services
-    5	Continuation of support or services
-    6	Admitted to hospital
-    7	NFA: Responsibility moved to another local authority
-    8	NFA: Referral to NHS services or NHS funded social care
-    9	NFA: Self-funded client or under 12wk disregard
-    10	NFA: Information and advice or signposting
-    11	NFA: Referral to other service within the local authority
-    12	NFA: Support declined
-    13	NFA: Deceased
-    14	NFA: Support ended as planned
-    15	NFA: Support ended for other reason
-    16	NFA: No services offered for other reason
-    17	NFA: Other
-```
+<br> \*\*\* Event outcome sorted according to [this hierarchy](/Main_tables/docs/methodology/3-data-cleaning.md#Event-outcome-hierachy)._
 
 **Notes:**
 
@@ -115,4 +97,4 @@ For joined submissions, where more rigourous deduplication is applied to service
 
 <br>
 
-[Back to Overview](/Main_tables/docs/methodology/1-overview.md)
+[Back to Overview](/Main_tables/docs/methodology/0-overview.md)

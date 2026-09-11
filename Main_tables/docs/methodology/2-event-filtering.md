@@ -1,12 +1,12 @@
 # Filtering to events in period
 
-> Processing steps applied in [`FilterToEventsInPeriod`](/Stored_procedures/create_FilterToEventsInPeriod_procedure.sql) procedure.
+> Processing steps applied in [`FilterToEventsInPeriod`](/Main_tables/stored_procedures/create_FilterToEventsInPeriod_procedure.sql) procedure.
 
-[Back to Overview](/Main_tables/docs/methodology/1-overview.md)
+[Back to Overview](/Main_tables/docs/methodology/0-overview.md)
 
 ## Method
 
-The [selected submissions](/Main_tables/docs/methodology/3-submission-selection.md) are appended (rows concatenated) and events are filtered according to the reference period to which they correspond. N.B for single submissions the reference period is the full 12 months.
+The [selected submissions](/Main_tables/docs/methodology/1-submission-selection.md) are appended (rows concatenated) and events are filtered according to the reference period to which they correspond. N.B for single submissions the reference period is the full 12 months.
 
 **Requests, assessments and reviews** are included if:
 
@@ -21,6 +21,8 @@ The [selected submissions](/Main_tables/docs/methodology/3-submission-selection.
   - after the end of the reference period, or
   - `NULL`.
 
+Note that corrected event end dates are used in this step (see [Enhancing date of death using ONS mortality data](/Main_tables/docs/methodology/dates-of-death.md) and [Derived fields](/Main_tables/docs/methodology/3-data-cleaning.md#Derived-fields)).
+
 ![Example demonstrating filtering for different event types](visuals/Slide3.PNG "Example of event filtering")
 
 ## Notes
@@ -30,4 +32,4 @@ The [selected submissions](/Main_tables/docs/methodology/3-submission-selection.
 
 <br>
 
-[Go to Data Cleaning](/Main_tables/docs/methodology/5-data-cleaning.md)
+[Go to Data Cleaning](/Main_tables/docs/methodology/3-data-cleaning.md)

@@ -12,10 +12,15 @@
 -- Amend reporting period below:
 
 DECLARE @ReportingPeriodStartDate AS DATE = '2023-04-01';
-DECLARE @ReportingPeriodEndDate AS DATE = '2026-03-31';
+DECLARE @ReportingPeriodEndDate AS DATE = '2026-06-30';
 
 -- Set "as of" (cut-off) date to select submissions below:
-DECLARE @SubmissionsAsOfDate AS DATE = '2026-05-05';
+DECLARE @SubmissionsAsOfDate AS DATE = '2026-08-10';
+
+--Set whether deaths snapshot is saved, or whether to use an existing snapshot
+DECLARE @SaveDeathsSnapshot AS NVARCHAR(1) = 'Y'
+DECLARE @InputDeathsSnapshot SYSNAME = NULL
+
 
 ---------------------------------------------------------------------------
 
@@ -58,7 +63,7 @@ BEGIN
   -- Execute GetSubmissions procedure to select submissions covering period according
   -- to derived reporting period and insert results into #TempSubmissions
   INSERT INTO #TempSubmissions
-  EXEC ASC_Sandbox.GetSubmissions
+  EXEC ASC_Sandbox.GetSubmissionsV2
     @ReportingPeriodStartDate = @RefPeriodStartDate,
     @ReportingPeriodEndDate = @RefPeriodEndDate,
     @SubmissionReportingPeriod = 'Derived',
@@ -133,11 +138,18 @@ BEGIN
 END;
 
 ---------------------------------------------------------------------------
--- 3. Filter the data to events in period
+-- 3. Get ONS dates of death
+---------------------------------------------------------------------------
+
+-- Execute GetONSDeaths procedure and save results to Temp_ sandbox table
+EXEC ASC_Sandbox.GetONSDeaths @InputTable = 'ASC_Sandbox.Temp_JoinedSubs_RawSubmissions', @OutputTable = 'ASC_Sandbox.Temp_JoinedSubs_RawSubmissions_Deaths', @SaveDeathsSnapshot = @SaveDeathsSnapshot, @InputDeathsSnapshot = @InputDeathsSnapshot;
+
+---------------------------------------------------------------------------
+-- 4. Filter the data to events in period
 ---------------------------------------------------------------------------
 
 -- Execute FilterToEventsInPeriod procedure and save results to Temp_ sandbox table
-EXEC ASC_Sandbox.FilterToEventsInPeriod @InputTable = 'ASC_Sandbox.Temp_JoinedSubs_RawSubmissions', @OutputTable = 'ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod';
+EXEC ASC_Sandbox.FilterToEventsInPeriod @InputTable = 'ASC_Sandbox.Temp_JoinedSubs_RawSubmissions_Deaths', @OutputTable = 'ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod';
 
 IF EXISTS (SELECT * FROM ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod)
 BEGIN
@@ -145,7 +157,7 @@ BEGIN
 END;
 
 ---------------------------------------------------------------------------
--- 4. Get cleaned and derived fields
+-- 5. Get cleaned and derived fields
 ---------------------------------------------------------------------------
 
 -- Execute GetDerivedFields procedure and save results to Temp_ sandbox table
@@ -161,7 +173,7 @@ BEGIN
 END;
 
 ---------------------------------------------------------------------------
--- 5. Deduplicate
+-- 6. Deduplicate
 ---------------------------------------------------------------------------
 
 -- Execute GetUniqueEvents procedure and save results to Temp_ sandbox table
@@ -173,9 +185,8 @@ BEGIN
 END;
 
 ---------------------------------------------------------------------------
--- 6. Write output table 
+-- 7. Write output table 
 ---------------------------------------------------------------------------
-
 -- Create output table name and write final output to sandbox
 -- NB if table already exists this will fail
 DECLARE @TableName AS VARCHAR(256) = CONCAT('CLD_',
@@ -186,19 +197,21 @@ DECLARE @TableName AS VARCHAR(256) = CONCAT('CLD_',
 
 DECLARE @Query NVARCHAR(MAX);
 SET @Query = 'SELECT *
-              INTO ASC_Sandbox.' + @TableName + ' 
+              INTO DHSC_Reporting.' + @TableName + ' 
               FROM ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;';
 EXEC(@Query);
 
 PRINT '' ;
-PRINT 'Please now run quarto main table QA script to sense check table created';
-PRINT 'then uncomment and run section 7 to drop "Temp_JoinedSubs" tables.';
+PRINT 'Please now run  main table QA script to sense check table created';
+PRINT 'then uncomment and run section 8 to drop "Temp_JoinedSubs" tables.';
+
 
 ---------------------------------------------------------------------------
--- 7. Drop temporary tables
+-- 8. Drop temporary tables
 ---------------------------------------------------------------------------
 
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_RawSubmissions;
+--DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_RawSubmissions_Deaths;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_EventsInPeriod;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_DerivedFields;
 --DROP TABLE IF EXISTS ASC_Sandbox.Temp_JoinedSubs_UniqueEvents;

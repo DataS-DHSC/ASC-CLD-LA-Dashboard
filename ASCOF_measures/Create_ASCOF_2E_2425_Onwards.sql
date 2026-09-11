@@ -38,7 +38,8 @@ CREATE PROCEDURE ASC_Sandbox.Create_ASCOF2E_2425_Onwards
   @InputTable AS NVARCHAR(100),
   @InputTable_PersonDetails AS VARCHAR(100),
   @OutputTable1 AS NVARCHAR(100),
-  @OutputTable2 AS NVARCHAR(100)
+  @OutputTable2 AS NVARCHAR(100),
+  @OutputTable_RLS AS NVARCHAR(100)
 
 AS         
           --SET NOCOUNT ON;
@@ -47,6 +48,7 @@ AS
       DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_PersonDetails
       SET @Query = N'DROP TABLE IF EXISTS ' + @OutputTable1 + '; 
                     DROP TABLE IF EXISTS ' + @OutputTable2 + '; 
+                    DROP TABLE IF EXISTS ' + @OutputTable_RLS + ';
                     CREATE SYNONYM ASC_Sandbox.InputTable FOR ' + @InputTable + '; 
                     CREATE SYNONYM ASC_Sandbox.InputTable_PersonDetails FOR ' +  @InputTable_PersonDetails +';' 
       EXEC(@Query)
@@ -136,11 +138,12 @@ AS
       LA_Code,
       LA_Name,
       Der_NHS_LA_Combined_Person_ID,
+      LA_Person_Unique_Identifier,
       Der_Event_End_Date
     INTO #ASCOF_2E_Build
     FROM ASC_Sandbox.InputTable
     WHERE Client_Type_Cleaned IN ('Service user')--changed
-      AND Event_Type = 'Service'
+      AND Event_Type_Cleaned = 'Service'
       AND Service_Type_Cleaned in ('Long term support: Nursing care', 'Long term support: Residential care', 'Long term support: Community', 'Long term support: Prison')
       AND Der_NHS_LA_Combined_Person_ID IS NOT NULL
       AND Event_Start_Date IS NOT NULL
@@ -168,11 +171,12 @@ AS
       a.LA_Code,
       a.LA_Name,
       a.Der_NHS_LA_Combined_Person_ID,
+      a.LA_Person_Unique_Identifier,
       a.Der_Event_End_Date,
       b.Accommodation_Status,
       b.Gender,
       b.Der_Birth_Date,
-      b.Date_of_Death,
+      b.Der_Date_of_Death,
       CASE 
         WHEN a.Der_Event_End_Date >= @ReportingPeriodEndDate 
         THEN @ReportingPeriodEndDate
@@ -206,7 +210,7 @@ AS
     INTO #ASCOF_2E_Person_Details
     FROM #Capped_end_dates
     WHERE
-      (Date_of_Death >= @ReportingPeriodStartDate OR Date_of_Death is NULL) 
+      (Der_Date_of_Death >= @ReportingPeriodStartDate OR Der_Date_of_Death is NULL) 
    --   AND Der_Birth_Date IS NOT NULL --removed this to align with LTS001a, including 'nulls/unknowns'
       AND 
    (@LD_PSR IS NULL OR Primary_Support_Reason = @LD_PSR) -- If @LD_Filter is 1, @LD_PSR is 'Learning Disability Support'. If @LD_Filter is 0, @LD_PSR is NULL, hence NULL=NULL so will just be ignored.
@@ -230,23 +234,47 @@ AS
     ------------- Form final table ---------------
     ----------------------------------------------
 
-    -- Find all known accomodation status from original table'
+    -- Find all known accomodation status from original table
     DROP TABLE IF EXISTS #ASCOF_2E_Final
-    SELECT DISTINCT
-      LA_Code,
+    
+    SELECT 
+      LA_Code, 
       LA_Name,
       Der_NHS_LA_Combined_Person_ID,
-      a.Accommodation_Status,
+      Accommodation_Status,
       Gender,
       Person_Age,
       Person_Working_Age_Band,
-      b.Accommodation_Status_Group
+      Accommodation_Status_Group,
+      STRING_AGG(CONVERT(NVARCHAR(Max), LA_Person_Unique_Identifier), ', ')
+        WITHIN GROUP (ORDER BY LA_Person_Unique_Identifier) AS LA_Person_Unique_Identifier
     INTO #ASCOF_2E_Final
-    FROM #ASCOF_2E_Person_Details_Age a
-    LEFT JOIN #REF_Accommodation_Status b
-      ON a.Accommodation_Status = b.Accommodation_Status
-    WHERE (@LD_Age IS NULL OR Person_Working_Age_Band = @LD_Age) -- If @LD_Filter is 1, @LD_Age is '18 to 64'. If @LD_Filter is 0, @LD_Age is NULL, hence NULL=NULL so will just be ignored.
-    AND Person_Working_Age_Band NOT IN ('Under 18')
+    FROM (
+      SELECT DISTINCT
+        LA_Code,
+        LA_Name,
+        Der_NHS_LA_Combined_Person_ID,
+        LA_Person_Unique_Identifier,
+        a.Accommodation_Status,
+        Gender,
+        Person_Age,
+        Person_Working_Age_Band,
+        b.Accommodation_Status_Group
+      FROM #ASCOF_2E_Person_Details_Age a
+      LEFT JOIN #REF_Accommodation_Status b
+        ON a.Accommodation_Status = b.Accommodation_Status
+      WHERE (@LD_Age IS NULL OR Person_Working_Age_Band = @LD_Age) -- If @LD_Filter is 1, @LD_Age is '18 to 64'. If @LD_Filter is 0, @LD_Age is NULL, hence NULL=NULL so will just be ignored.
+        AND Person_Working_Age_Band NOT IN ('Under 18')
+    ) A
+    GROUP BY 
+      LA_Code, 
+      LA_Name, 
+      Der_NHS_LA_Combined_Person_ID,
+      Accommodation_Status,
+      Gender,
+      Person_Age,
+      Person_Working_Age_Band,
+      Accommodation_Status_Group
 
     ----------------------------------------------------------------
     ------------- Create numerators and denominators ---------------
@@ -257,6 +285,7 @@ AS
     SELECT 
     a.LA_Code, 
     a.LA_Name,
+    a.LA_Person_Unique_Identifier,
     COALESCE (Gender, 'Total') as Gender, --the result of the ROLLUP is Gender = Null so needs replacing with total
     a.Person_Working_Age_Band,
     COUNT(DISTINCT a.Der_NHS_LA_Combined_Person_ID) AS Numerator 
@@ -267,6 +296,7 @@ AS
     GROUP BY 
       LA_Code, 
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Gender),  --ROLLUP used to output an overall total
       Person_Working_Age_Band;
 
@@ -275,6 +305,7 @@ AS
     SELECT 
       LA_Code, 
       LA_Name,
+      LA_Person_Unique_Identifier,
       COALESCE (Gender, 'Total') as Gender,
       Person_Working_Age_Band,
       COUNT(DISTINCT Der_NHS_LA_Combined_Person_ID) AS Denominator 
@@ -284,9 +315,10 @@ AS
     GROUP BY 
       LA_Code, 
       LA_Name,
+      LA_Person_Unique_Identifier,
       ROLLUP(Gender), 
       Person_Working_Age_Band;
-
+     
     --------------------------------------------------------------------------------------------
     ---- Create reference table which contains all combinations of LA, age group and gender ----
     --------------------------------------------------------------------------------------------
@@ -356,6 +388,57 @@ AS
         ) a;
     END;
 
+    ------------------------------------------------------------
+    ---- Person level table for record level sharing report ----
+    ------------------------------------------------------------
+    DROP TABLE IF EXISTS #OutputTable_RLS_Temp
+
+    SELECT
+      d.LA_Code,
+      d.LA_Name,
+      d.LA_Person_Unique_Identifier,
+      CASE 
+        WHEN @LD_Filter = 1 THEN 'ASCOF 2E LD' 
+        ELSE 'ASCOF 2E'
+      END AS Measure,
+      CASE 
+        WHEN d.Person_Working_Age_Band = '18 to 64' THEN 'The proportion of people aged 18-64 who receive long-term support who live in their home or with family (%)'
+        ELSE 'The proportion of people aged 65+ who receive long-term support who live in their home or with family (%)'
+      END AS [Description],
+      d.Gender AS [Group],
+      n.Numerator,
+      d.Denominator
+    INTO #OutputTable_RLS_Temp
+    FROM #Denominator d
+    LEFT JOIN #Numerator n
+      ON d.LA_Code = n.LA_Code
+      AND d.LA_Person_Unique_Identifier = n.LA_Person_Unique_Identifier
+      AND d.Gender = n.Gender
+      AND d.Person_Working_Age_Band = n.Person_Working_Age_Band
+    WHERE d.Gender IN ('Male', 'Female', 'Total');
+    
+    
+    --Ensure all combinations of LA, age, gender exist
+    DROP TABLE IF EXISTS #OutputTable_RLS
+
+    SELECT
+      r.Reporting_Period,
+      r.LA_Code,
+      r.LA_Name,
+      o.LA_Person_Unique_Identifier,
+      r.Measure,
+      r.[Description],
+      r.[Group],
+      o.Numerator,
+      o.Denominator
+    INTO #OutputTable_RLS
+    FROM #REF_Final_Format r
+    LEFT JOIN #OutputTable_RLS_temp o
+      ON r.LA_Code = o.LA_Code AND
+      r.[Description] = o.[Description] AND 
+      r.[Group] = o.[Group]
+
+
     ------------------------------------------------------------------------
     --- Create final output and join with reference table created above
     ------------------------------------------------------------------------
@@ -364,31 +447,24 @@ AS
     DROP TABLE IF EXISTS #Final_Output
 
     SELECT 
-      FORMAT(CAST(@ReportingPeriodStartDate AS DATE), 'd MMM yy') + ' - ' + FORMAT(CAST(@ReportingPeriodEndDate AS DATE), 'd MMM yy') AS Reporting_Period,
-      d.LA_Code,
-      d.LA_Name,
-      CASE 
-        WHEN @LD_Filter = 1 THEN 'ASCOF 2E LD'
-        ELSE 'ASCOF 2E' 
-      END AS Measure,
-      CASE 
-        WHEN d.Person_Working_Age_Band = '18 to 64' --age isn't a column so set the correct descriptions
-          THEN 'The proportion of people aged 18-64 who receive long-term support who live in their home or with family (%)'
-        ELSE 'The proportion of people aged 65+ who receive long-term support who live in their home or with family (%)' 
-      END AS [Description],
-      d.Gender AS [Group],
-      n.Numerator,
-      d.Denominator,
-      ROUND((CAST(n.Numerator AS FLOAT) / CAST(d.Denominator AS FLOAT)) * 100, 1) AS [Outcome]   --method as per previous
+      Reporting_Period,
+      LA_Code,
+      LA_Name,
+      Measure,
+      [Description],
+      [Group],
+      SUM(Numerator) AS Numerator,
+      SUM(DenominaTor) AS Denominator,
+      ROUND((CAST(SUM(Numerator) AS FLOAT) / CAST(SUM(Denominator) AS FLOAT)) * 100, 1) AS [Outcome]   --method as per previous
     INTO #Final_Output
-    FROM #Denominator d
-    LEFT JOIN #Numerator n  --starting table is denominator so can do a left join
-      ON d.LA_Code = n.LA_Code
-      AND d.LA_Name = n.LA_Name
-      AND d.Gender = n.Gender
-      AND d.Person_Working_Age_Band = n.Person_Working_Age_Band
-    WHERE d.Gender IN ('Male', 'Female', 'Total'); --at the end remove the rows with genders not in this list (unknowns, others, invalids have been counted in the total)
-
+    FROM #OutputTable_RLS d
+    GROUP BY
+      Reporting_Period, 
+      LA_Code,
+      LA_Name,
+      Measure,
+      [Description],
+      [Group]
 
     --Join with reference table to ensure all LAs are present in final output (with 0s if null)
     DROP TABLE IF EXISTS #OutputTable1
@@ -466,6 +542,8 @@ AS
     SET @Query = 'SELECT * INTO ' + @OutputTable2 + ' FROM #OutputTable2'
     EXEC(@Query)
 
+    SET @Query = 'SELECT * INTO ' + @OutputTable_RLS + ' FROM #OutputTable_RLS'
+    EXEC(@Query)
 
     DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable
     DROP SYNONYM IF EXISTS ASC_Sandbox.InputTable_PersonDetails
@@ -475,11 +553,12 @@ GO
 /*
 -----Example execution
 EXEC ASC_Sandbox.Create_ASCOF2E_2425_Onwards 
-  @ReportingPeriodStartDate = '2024-04-01',
-  @ReportingPeriodEndDate = '2025-03-31', 
+  @ReportingPeriodStartDate = '2025-04-01',
+  @ReportingPeriodEndDate = '2026-03-31', 
   @LD_Filter = 1,  --Toggle on or off
-  @InputTable = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions', 
-  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_250630_JoinedSubmissions_Latest_Person_Data_2425',
+  @InputTable = 'DHSC_Reporting.CLD_230401_260331_JoinedSubmissions_V2', 
+  @InputTable_PersonDetails = 'ASC_Sandbox.CLD_230401_260331_JoinedSubmissions_V2_Latest_Person_Data',
   @OutputTable1 = 'ASC_Sandbox.ASCOF_2E_LD',
-  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk'
+  @OutputTable2 = 'ASC_Sandbox.ASCOF_2E_LD_Unk',
+  @OutputTable_RLS = 'ASC_Sandbox.ASCOF_2E_LD_RLS'
 */

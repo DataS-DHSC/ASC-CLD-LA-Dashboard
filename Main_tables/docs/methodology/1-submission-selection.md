@@ -1,12 +1,12 @@
 # Selecting submissions to cover the period
 
-> Processing steps applied in [`GetSubmissions`](/Stored_procedures/create_GetSubmissions_procedure.sql) procedure.
+> Processing steps applied in [`GetSubmissions`](/Main_tables/stored_procedures/create_GetSubmissions_procedure.sql) procedure.
 
-[Back to Overview](/Main_tables/docs/methodology/1-overview.md)
+[Back to Overview](/Main_tables/docs/methodology/0-overview.md)
 
 ## Selection logic
 
-- [Reporting periods are derived](/Main_tables/docs/methodology/2-reporting-periods.md) from the data, not taken as stated in submissions.
+- [Reporting periods are derived](/Main_tables/docs/methodology/reporting-periods.md) from the data, not taken as stated in submissions.
 
 - The most recently submitted data is assumed to be the most accurate.
 
@@ -33,4 +33,4 @@
 
 <br>
 
-[Go to Event Filtering](/Main_tables/docs/methodology/4-event-filtering.md)
+[Go to Event Filtering](/Main_tables/docs/methodology/2-event-filtering.md)

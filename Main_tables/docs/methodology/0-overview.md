@@ -17,17 +17,48 @@
 
 ## Main processing steps
 
-1. [**Select submissions covering the period**](/Main_tables/docs/methodology/3-submission-selection.md)  
+1. [**Select submissions covering the period**](/Main_tables/docs/methodology/1-submission-selection.md)  
    Latest submissions containing data covering the period, selected “as of” a fixed date.
 
-2. [**Filter the data to events in the period**](/Main_tables/docs/methodology/4-event-filtering.md)  
+2. [**Filter the data to events in the period**](/Main_tables/docs/methodology/2-event-filtering.md)  
    Requests, assessments and reviews must end within the period; services may be ongoing.
 
-3. [**Create cleaned and derived fields**](/Main_tables/docs/methodology/5-data-cleaning.md)  
+3. [**Create cleaned and derived fields**](/Main_tables/docs/methodology/3-data-cleaning.md)  
    Invalid values are mapped where possible; release 1 data is mapped to release 2; higher-level groupings and corrected end dates are derived.
 
-4. [**Deduplicate records**](/Main_tables/docs/methodology/6-deduplication.md) (identify unique events)
+4. [**Deduplicate records**](/Main_tables/docs/methodology/4-deduplication.md) (identify unique events)
    <br>One original record is retained per (DHSC‑defined) “unique event”.
+
+```mermaid
+flowchart LR
+
+    CLD["ASC CLD submissions"]
+    ONS["ONS mortality data"]
+
+    SelectSubmissions["Select submissions covering the period"]
+    FilterEvents["Filter the data to events in the period"]
+    CleanData["Create cleaned and derived fields"]
+    Deduplicate["Identify unique events and deduplicate records"]
+
+    Output["Output table"]
+
+    CLD --> SelectSubmissions
+    SelectSubmissions --> FilterEvents
+    FilterEvents --> CleanData
+    CleanData --> Deduplicate
+    Deduplicate --> Output
+
+    ONS --> FilterEvents
+
+    classDef input fill:#00a990,stroke:#00a990,color:#ffffff
+    classDef process fill:#f5f5f5,stroke:#f5f5f5,color:#000000
+    classDef output fill:#008674,stroke:#008674,color:#ffffff
+
+    class CLD,ONS input
+    class ReportingPeriods,SelectSubmissions,FilterEvents,CleanData,Deduplicate process
+    class Output output
+```
+
 
 
 ## Guiding principles
@@ -44,9 +75,10 @@
 Joined submissions, i.e. main tables for full reporting period to date, are used when:
 
 - Analysis requires a time-series longer than 12 months.
-- Some loss of service‑level information is acceptable - packages of care submitted across multiple rows may lose detail and cost data fields are explicitly dropped.
+- Some loss of service-level information is acceptable - packages of care submitted across multiple rows may lose detail and cost data fields are explicitly dropped.
 
 Otherwise, latest rolling 12-month reporting period tables - based on single (12-month) submissions - are used.
+
 
 <br>
 

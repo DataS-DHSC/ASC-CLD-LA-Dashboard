@@ -15,10 +15,10 @@
 -- NB uses reporting periods from ASC_Sandbox.REF_Submission_Reporting_Periods
 -- (updated as part of AGEM pipeline)
 ---------------------------------------------------------------------------
-DROP PROCEDURE IF EXISTS ASC_Sandbox.GetSubmissions
+DROP PROCEDURE IF EXISTS ASC_Sandbox.GetSubmissionsV2
 GO
 
-CREATE PROCEDURE ASC_Sandbox.GetSubmissions
+CREATE PROCEDURE ASC_Sandbox.GetSubmissionsV2
   @ReportingPeriodStartDate DATE,
   @ReportingPeriodEndDate DATE,
   @SubmissionReportingPeriod AS NVARCHAR(256),
@@ -47,7 +47,7 @@ AS
                            ORDER BY
                              ImportDate DESC
                           ) Row
-      FROM ASC_Sandbox.REF_Submission_Reporting_Periods
+      FROM ASC_Sandbox.REF_Submission_Reporting_Periods_V2
       WHERE (
       (@SubmissionReportingPeriod = 'Derived'
       AND Der_Reporting_Period_Start_Date <= @ReportingPeriodStartDate
@@ -61,7 +61,17 @@ AS
       AND CONVERT(date, ImportDate) <= @SubmissionsAsOfDate
 
       -- Exclude files with known (major) issues
-      AND ImportDate NOT IN ('2026-04-23 13:28:24.253')
+      AND ImportDate NOT IN (
+        '2026-08-04 13:31:40.900',
+        '2026-07-31 19:37:36.510',
+        '2026-07-30 12:07:02.750',
+        '2026-07-28 09:01:46.043',
+        '2026-07-20 15:16:26.550',
+        '2026-07-15 16:41:26.370',
+        '2026-04-23 13:28:24.253',
+        '2026-01-23 08:22:06.243',
+        '2026-01-26 16:17:13.097'
+        )
 
     ) c
     -- take the latest file submitted by each LA (of those meeting the above criteria)
